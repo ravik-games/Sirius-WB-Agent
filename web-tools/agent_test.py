@@ -1,7 +1,7 @@
 from web_agent_tools import *
 
 # Пример работы
-agent = get_agent(headless=False, slow_mo_ms=100, viewport=(900, 900))
+agent = get_agent(headless=True, slow_mo_ms=100, viewport=(900, 900))
 agent.screenshot()
 
 agent.click_and_screenshot(600, 75, click_count=1)

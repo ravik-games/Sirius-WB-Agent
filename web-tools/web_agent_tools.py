@@ -1,54 +1,14 @@
 """
-WBAgent — единый экземпляр Playwright-агента для работы со страницей wildberries.ru.
+Web Agent — единый экземпляр Playwright-агента для работы с веб-страницами
 
 Возможности:
 - Открывает браузер и один раз загружает https://www.wildberries.ru/
-- Гарантирует «стабильное» состояние страницы (ждёт не только load, но и затухание
-  динамических изменений DOM)
+- Гарантирует «стабильное» состояние страницы (ждёт не только load, но и затухание динамических изменений DOM)
 - Делает скриншот текущего состояния страницы
-- Клик по координатам (x, y) и скриншот
-- Ввод текста по координатам (x, y): сначала клик по (x, y), затем набор текста, и скриншот
-- Скроллит страницу и делает скриншот
-
-Требования к окружению (один раз):
-  pip install playwright
-
-
-Пример использования:
-
-    # Вариант 1: запустить этот файл напрямую:
-    #   python sirius-cv\\wb-agent.py
-    # Он откроет браузер и сделает пару скриншотов (демо в __main__).
-    #
-    # Вариант 2: импортировать модуль по пути файла (т.к. в имени есть дефис):
-    import importlib.util as _iu
-    import sys, pathlib
-    mod_path = pathlib.Path("sirius-cv")/"wb-agent.py"
-    spec = _iu.spec_from_file_location("wb_agent", mod_path)
-    wb_agent = _iu.module_from_spec(spec)
-    spec.loader.exec_module(wb_agent)  # type: ignore
-
-    agent = wb_agent.get_agent(headless=False)  # браузер будет виден
-
-    # Стартовый скриншот главной
-    agent.wait_until_stable()
-    agent.screenshot("screenshots/home.png")
-
-    # Клик по координатам (пример):
-    agent.click_and_screenshot(200, 150, "screenshots/after-click.png")
-
-    # Ввод в поле по координатам: сначала фокус, затем набор
-    agent.fill_and_screenshot(400, 80, "кроссовки", screenshot_path="screenshots/after-fill.png", press_enter=True)
-
-    # Скролл вниз на 1000px
-    agent.scroll_and_screenshot(direction="down", pixels=1000, screenshot_path="screenshots/after-scroll.png")
-
-    # По окончании работы (если нужен явный shutdown)
-    agent.close()
-
-Замечания:
-- Селекторы зависят от текущей верстки сайта; используйте page.locator(...) синтаксис Playwright.
-- Методы сами ожидают стабилизацию страницы перед скриншотом.
+- Клик по координатам (x, y)
+- Ввод текста по координатам (x, y): сначала клик по (x, y), затем набор текста
+- Скроллит страницу
+- Ожидает указанное число миллисекунд
 """
 from __future__ import annotations
 
@@ -57,34 +17,36 @@ import time
 from pathlib import Path
 from typing import Optional, Literal
 
-from playwright.sync_api import Playwright, sync_playwright, Browser, BrowserContext, Page, TimeoutError as PWTimeoutError
+from playwright.sync_api import Playwright, sync_playwright, Browser, BrowserContext, Page, \
+    TimeoutError as PWTimeoutError, ViewportSize
 
-
-_WB_URL = "https://www.wildberries.ru/"
-_DEFAULT_SCREENSHOTS_DIR = Path("screenshots")
-
-
-class WBAgent:
-    """Агент, создающий ОДИН браузер и ОДНУ страницу wildberries, пригодную для повторного использования.
+class WebAgent:
+    """Агент, создающий браузер с указанной страницей.
 
     Параметры конструктора:
       - headless: запускать ли браузер без UI (по умолчанию False — видимый браузер)
+      - url: ссылка на веб-страницу
       - slow_mo_ms: замедление операций (мс) для наглядности
       - viewport: кортеж (width, height) или None для системного размера окна
+      - screenshot_path: путь для сохранения скриншотов
     """
 
     def __init__(
         self,
-        headless: bool = False,
+        headless: bool = True,
+        url: str = "https://www.wildberries.ru/",
         slow_mo_ms: int = 0,
         viewport: Optional[tuple[int, int]] = (1366, 900),
         user_agent: Optional[str] = None,
+        screenshot_path: Path = Path("screenshots"),
     ) -> None:
         self._playwright_cm = sync_playwright()
         self._pw: Playwright = self._playwright_cm.__enter__()
         self._browser: Browser | None = None
         self._context: BrowserContext | None = None
         self._page: Page | None = None
+        self.url = url
+        self.screenshot_path = screenshot_path
 
         self._browser = self._pw.chromium.launch(
             headless=headless,
@@ -103,17 +65,15 @@ class WBAgent:
             ignore_https_errors=True,
         )
         if viewport:
-            context_args["viewport"] = {"width": viewport[0], "height": viewport[1]}
-        else:
-            context_args["viewport"] = None  # использовать окно системы
+            context_args["viewport"] = ViewportSize(width=viewport[0], height=viewport[1])
+
         if user_agent:
             context_args["user_agent"] = user_agent
 
         self._context = self._browser.new_context(**context_args)
         self._page = self._context.new_page()
 
-        # Переход на Wildberries с аккуратным ожиданием
-        self._page.goto(_WB_URL, wait_until="domcontentloaded")
+        self._page.goto(self.url, wait_until="domcontentloaded")
         self.wait_until_stable(max_wait_ms=5000)
 
     # --------------------------- Публичные операции ---------------------------
@@ -244,10 +204,27 @@ class WBAgent:
         full_page: bool = False,
     ) -> Path:
         """Скроллит страницу и делает скриншот.
+
+        - delta_x: Скролл по X
+        - delta_y: Скролл по Y
         """
         p = self.page
         p.mouse.wheel(delta_x, delta_y)
         self.wait_until_stable()
+        return self.screenshot(screenshot_path, full_page=full_page)
+
+    def wait(
+        self,
+        ms: int = 1000,
+        screenshot_path: Optional[str | os.PathLike] = None,
+        full_page: bool = False,
+    ) -> Path:
+        """Ожидание и скриншот.
+
+        - ms: Время в миллисекундах для ожидания
+        """
+        p = self.page
+        p.wait_for_timeout(ms)
         return self.screenshot(screenshot_path, full_page=full_page)
 
     def close(self) -> None:
@@ -315,13 +292,13 @@ class WBAgent:
                 p = p.with_suffix(".png")
             return p
         else:
-            _DEFAULT_SCREENSHOTS_DIR.mkdir(parents=True, exist_ok=True)
+            self.screenshot_path.mkdir(parents=True, exist_ok=True)
             ts = time.strftime("%Y%m%d-%H%M%S")
-            return _DEFAULT_SCREENSHOTS_DIR / f"wb-{ts}.png"
+            return self.screenshot_path / f"wb-{ts}.png"
 
 
 # --------------------------- Модульный синглтон ---------------------------
-_agent_singleton: Optional[WBAgent] = None
+_agent_singleton: Optional[WebAgent] = None
 
 
 def get_agent(
@@ -329,7 +306,7 @@ def get_agent(
     slow_mo_ms: int = 0,
     viewport: Optional[tuple[int, int]] = (1000, 1000),
     user_agent: Optional[str] = None,
-) -> WBAgent:
+) -> WebAgent:
     """Возвращает единый экземпляр агента (создаётся при первом вызове).
 
     Повторные вызовы возвращают уже созданный экземпляр, тем самым браузер/страница
@@ -337,7 +314,7 @@ def get_agent(
     """
     global _agent_singleton
     if _agent_singleton is None:
-        _agent_singleton = WBAgent(
+        _agent_singleton = WebAgent(
             headless=headless,
             slow_mo_ms=slow_mo_ms,
             viewport=viewport,
