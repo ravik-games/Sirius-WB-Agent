@@ -303,9 +303,11 @@ _agent_singleton: Optional[WebAgent] = None
 
 def get_agent(
     headless: bool = False,
+    url: str = "https://www.wildberries.ru/",
     slow_mo_ms: int = 0,
     viewport: Optional[tuple[int, int]] = (1000, 1000),
     user_agent: Optional[str] = None,
+    screenshot_path: Path = Path("web-tools/screenshots"),
 ) -> WebAgent:
     """Возвращает единый экземпляр агента (создаётся при первом вызове).
 
@@ -316,9 +318,11 @@ def get_agent(
     if _agent_singleton is None:
         _agent_singleton = WebAgent(
             headless=headless,
+            url=url,
             slow_mo_ms=slow_mo_ms,
             viewport=viewport,
             user_agent=user_agent,
+            screenshot_path=screenshot_path,
         )
     return _agent_singleton
 
