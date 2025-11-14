@@ -1,8 +1,8 @@
 from pathlib import Path
 from typing import Optional
-
+import json5
 from web_tools.web_agent_tools import close_agent, WebAgent, get_agent
-
+from qwen_agent.tools.base import BaseTool, register_tool
 
 def init_session(
         headless: bool = False,
@@ -23,112 +23,185 @@ def init_session(
 def close_session() -> None:
     close_agent()
 
-def make_web_tools(agent: WebAgent) -> list:
-    web_tools = [
+@register_tool("screenshot")
+class ScreenshotTool(BaseTool):
+    description = "Makes screenshot of the current web-page status. Returns created image."
+    parameters = {}
+
+    def call(self, params: str, **kwargs) -> str:
+        agent = get_agent()
+        path = agent.screenshot()
+        return str(path)
+
+
+@register_tool("click")
+class ClickTool(BaseTool):
+    description = (
+        "Clicks at given X,Y coordinates with left/right/middle button and optional double click. "
+        "Returns a screenshot after the action."
+    )
+    parameters = [
         {
-            "name": "Screenshot",
-            "description": "Makes screenshot of the current web-page status. Returns created image.",
-            "parameters": {},
-            "function": agent.screenshot
+            'name': 'x',
+            'type': 'integer',
+            'description': 'X coordinate in CSS pixels from 0 to 1000.',
+            'required': True
         },
         {
-            "name": "Click",
-            "description": "Clicks at given X,Y coordinates with left/right/middle button and optional double click. Returns a screenshot after the action.",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "x": {
-                        "type": "integer",
-                        "description": "X coordinate in CSS pixels from 0 to 1000."
-                    },
-                    "y": {
-                        "type": "integer",
-                        "description": "Y coordinate in CSS pixels from 0 to 1000."
-                    },
-                    "button": {
-                        "type": "string",
-                        "enum": ["left", "right", "middle"],
-                        "default": "left",
-                        "description": "Mouse button to click."
-                    },
-                    "click_count": {
-                        "type": "integer",
-                        "enum": [1, 2],
-                        "default": 1,
-                        "description": "Number of clicks."
-                    },
-                },
-                "required": ["x", "y"],
-            },
-            "function": agent.click_and_screenshot
+            'name': 'y',
+            'type': 'integer',
+            'description': 'Y coordinate in CSS pixels from 0 to 1000.',
+            'required': True
         },
         {
-            "name": "TypeText",
-            "description": "Focuses at X,Y, optionally clears the input, optionally presses Enter, then returns a screenshot.",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "x": {
-                        "type": "integer",
-                        "description": "X coordinate in CSS pixels from 0 to 1000."
-                    },
-                    "y": {
-                        "type": "integer",
-                        "description": "Y coordinate in CSS pixels from 0 to 1000."
-                    },
-                    "text": {
-                        "type": "string",
-                        "description": "Text to type into the focused field."
-                    },
-                    "press_enter": {
-                        "type": "boolean",
-                        "default": False,
-                        "description": "Press Enter after typing."
-                    },
-                    "clear_before": {
-                        "type": "boolean",
-                        "default": True,
-                        "description": "Clears input field before typing."
-                    },
-                },
-                "required": ["x", "y", "text"]
-            },
-            "function": agent.fill_and_screenshot
+            'name': 'button',
+            'type': 'string',
+            'description': "Mouse button to click: 'left', 'right', or 'middle'.",
+            'required': False
         },
         {
-            "name": "Scroll",
-            "description": "Scrolls the page by deltaX and deltaY and returns a screenshot.",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "delta_x": {
-                        "type": "integer",
-                        "default": 0,
-                        "description": "Horizontal scroll delta (positive = right, negative = left)."
-                    },
-                    "delta_y": {
-                        "type": "integer",
-                        "default": 800,
-                        "description": "Vertical scroll delta (positive = down, negative = up)."
-                    },
-                }
-            },
-            "function": agent.scroll_and_screenshot
-        },
-        {
-            "name": "Wait",
-            "description": "Waits for a specified number of milliseconds, then returns a screenshot.",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "ms": {
-                        "type": "integer",
-                        "default": 1000,
-                        "description": "Milliseconds to wait."
-                    }
-                }
-            },
-            "function": agent.wait
+            'name': 'click_count',
+            'type': 'integer',
+            'description': 'Number of clicks: 1 for single click, 2 for double click.',
+            'required': False
         },
     ]
-    return web_tools
+
+    def call(self, params: str, **kwargs) -> str:
+        args = json5.loads(params)
+        x = args['x']
+        y = args['y']
+        button = args.get('button', 'left')
+        click_count = args.get('click_count', 1)
+
+        agent = get_agent()
+        path = agent.click_and_screenshot(
+            x=x,
+            y=y,
+            button=button,
+            click_count=click_count,
+        )
+        return str(path)
+
+
+@register_tool("type_text")
+class TypeTextTool(BaseTool):
+    description = (
+        "Focuses at X,Y, optionally clears the input, optionally presses Enter, "
+        "then returns a screenshot."
+    )
+    parameters = [
+        {
+            'name': 'x',
+            'type': 'integer',
+            'description': 'X coordinate in CSS pixels from 0 to 1000.',
+            'required': True
+        },
+        {
+            'name': 'y',
+            'type': 'integer',
+            'description': 'Y coordinate in CSS pixels from 0 to 1000.',
+            'required': True
+        },
+        {
+            'name': 'text',
+            'type': 'string',
+            'description': 'Text to type into the focused field.',
+            'required': True
+        },
+        {
+            'name': 'press_enter',
+            'type': 'boolean',
+            'description': 'Press Enter after typing.',
+            'required': False
+        },
+        {
+            'name': 'clear_before',
+            'type': 'boolean',
+            'description': 'Clears input field before typing.',
+            'required': False
+        },
+    ]
+
+    def call(self, params: str, **kwargs) -> str:
+        args = json5.loads(params)
+        x = args['x']
+        y = args['y']
+        text = args['text']
+        press_enter = args.get('press_enter', False)
+        clear_before = args.get('clear_before', True)
+
+        agent = get_agent()
+        path = agent.fill_and_screenshot(
+            x=x,
+            y=y,
+            text=text,
+            press_enter=press_enter,
+            clear_before=clear_before,
+        )
+        return str(path)
+
+
+@register_tool("scroll")
+class ScrollTool(BaseTool):
+    description = "Scrolls the page by deltaX and deltaY and returns a screenshot."
+    parameters = [
+        {
+            'name': 'delta_x',
+            'type': 'integer',
+            'description': 'Horizontal scroll delta (positive = right, negative = left).',
+            'required': False
+        },
+        {
+            'name': 'delta_y',
+            'type': 'integer',
+            'description': 'Vertical scroll delta (positive = down, negative = up).',
+            'required': False
+        },
+    ]
+
+    def call(self, params: str, **kwargs) -> str:
+        args = json5.loads(params) if params else {}
+        delta_x = args.get('delta_x', 0)
+        delta_y = args.get('delta_y', 800)
+
+        agent = get_agent()
+        path = agent.scroll_and_screenshot(
+            delta_x=delta_x,
+            delta_y=delta_y,
+        )
+        return str(path)
+
+
+@register_tool("wait")
+class WaitTool(BaseTool):
+    description = "Waits for a specified number of milliseconds, then returns a screenshot."
+    parameters = [
+        {
+            'name': 'ms',
+            'type': 'integer',
+            'description': 'Milliseconds to wait.',
+            'required': False
+        },
+    ]
+
+    def call(self, params: str, **kwargs) -> str:
+        args = json5.loads(params) if params else {}
+        ms = args.get('ms', 1000)
+        agent = get_agent()
+        path = agent.wait(ms=ms)
+        return str(path)
+
+def make_web_tools(agent: WebAgent | None = None) -> list[BaseTool]:
+    """Возвращает список зарегистрированных web-tools.
+
+    Параметр agent сохраняем для обратной совместимости, но не используем,
+    так как инструменты работают через singleton get_agent().
+    """
+    return [
+        ScreenshotTool(),
+        ClickTool(),
+        TypeTextTool(),
+        ScrollTool(),
+        WaitTool(),
+    ]
