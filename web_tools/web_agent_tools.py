@@ -145,9 +145,9 @@ class WebAgent:
 
     def fill_and_screenshot(
         self,
-        x: int,
-        y: int,
         text: str,
+        x: int = None,
+        y: int = None,
         screenshot_path: Optional[str | os.PathLike] = None,
         press_enter: bool = False,
         typing_delay_ms: int = 10,

@@ -93,7 +93,7 @@ class TypeTextTool(BaseTool):
             'name': 'press_enter',
             'type': 'boolean',
             'description': 'Press Enter after typing.',
-            'required': True
+            'required': False
         },
         {
             'name': 'clear_before',
@@ -107,12 +107,10 @@ class TypeTextTool(BaseTool):
         args = json5.loads(params)
         text = args['text']
         press_enter = args.get('press_enter', True)
-        clear_before = args.get('clear_before', False)
+        clear_before = args.get('clear_before', True)
 
         agent = get_agent()
         path = agent.fill_and_screenshot(
-            x=None,
-            y=None,
             text=text,
             press_enter=press_enter,
             clear_before=clear_before,
