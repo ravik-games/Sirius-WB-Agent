@@ -1,6 +1,8 @@
 from pathlib import Path
-from typing import Optional
+from typing import Optional, List
 import json5
+from qwen_agent.llm.schema import ContentItem
+
 from web_tools.web_agent_tools import close_agent, WebAgent, get_agent
 from qwen_agent.tools.base import BaseTool, register_tool
 
@@ -57,10 +59,12 @@ class ClickTool(BaseTool):
         },
     ]
 
-    def call(self, params: str, **kwargs) -> str:
+    def call(self, params: str, **kwargs) -> List[ContentItem]:
         args = json5.loads(params)
-        x = args['x']
-        y = args['y']
+        if isinstance(args['x'], list):
+            x, y = args['x']
+        else:
+            x, y = int( args['x']), int(args['y'])
         button = args.get('button', 'left')
         click_count = args.get('click_count', 1)
 
@@ -71,28 +75,14 @@ class ClickTool(BaseTool):
             button=button,
             click_count=click_count,
         )
-        return str(path)
+        return [ContentItem(image=str(path))]
 
 
 @register_tool("type_text")
 class TypeTextTool(BaseTool):
-    description = (
-        "Focuses at X,Y, optionally clears the input, optionally presses Enter, "
-        "then returns a screenshot."
-    )
+    description = "BEFORE USING THIS TOOL YOU NEED TO CLICK THE FIELD. Tool to input text into current field. Optionally clears the input and presses Enter, then returns a screenshot. You can use that to fill search field for example."
+
     parameters = [
-        {
-            'name': 'x',
-            'type': 'integer',
-            'description': 'X coordinate in CSS pixels from 0 to 1000.',
-            'required': True
-        },
-        {
-            'name': 'y',
-            'type': 'integer',
-            'description': 'Y coordinate in CSS pixels from 0 to 1000.',
-            'required': True
-        },
         {
             'name': 'text',
             'type': 'string',
@@ -109,27 +99,25 @@ class TypeTextTool(BaseTool):
             'name': 'clear_before',
             'type': 'boolean',
             'description': 'Clears input field before typing.',
-            'required': True
+            'required': False
         },
     ]
 
-    def call(self, params: str, **kwargs) -> str:
+    def call(self, params: str, **kwargs) -> List[ContentItem]:
         args = json5.loads(params)
-        x = args['x']
-        y = args['y']
         text = args['text']
         press_enter = args.get('press_enter', True)
         clear_before = args.get('clear_before', False)
 
         agent = get_agent()
         path = agent.fill_and_screenshot(
-            x=x,
-            y=y,
+            x=None,
+            y=None,
             text=text,
             press_enter=press_enter,
             clear_before=clear_before,
         )
-        return str(path)
+        return [ContentItem(image=str(path))]
 
 
 @register_tool("scroll")
@@ -139,28 +127,28 @@ class ScrollTool(BaseTool):
         {
             'name': 'delta_x',
             'type': 'integer',
-            'description': 'Horizontal scroll delta (positive = right, negative = left).',
+            'description': 'Horizontal scroll delta (positive = left, negative = right).',
             'required': False
         },
         {
             'name': 'delta_y',
             'type': 'integer',
-            'description': 'Vertical scroll delta (positive = down, negative = up).',
+            'description': 'Vertical scroll delta (positive = up, negative = down).',
             'required': False
         },
     ]
 
-    def call(self, params: str, **kwargs) -> str:
+    def call(self, params: str, **kwargs) -> List[ContentItem]:
         args = json5.loads(params) if params else {}
-        delta_x = args.get('delta_x', 0)
-        delta_y = args.get('delta_y', 800)
+        delta_x = -args.get('delta_x', 0)
+        delta_y = -args.get('delta_y', 1000)
 
         agent = get_agent()
         path = agent.scroll_and_screenshot(
             delta_x=delta_x,
             delta_y=delta_y,
         )
-        return str(path)
+        return [ContentItem(image=str(path))]
 
 
 @register_tool("wait")
@@ -175,12 +163,77 @@ class WaitTool(BaseTool):
         },
     ]
 
-    def call(self, params: str, **kwargs) -> str:
+    def call(self, params: str, **kwargs) -> List[ContentItem]:
         args = json5.loads(params) if params else {}
         ms = args.get('ms', 1000)
         agent = get_agent()
         path = agent.wait(ms=ms)
-        return str(path)
+        return [ContentItem(image=str(path))]
+
+@register_tool("go_back")
+class GoBackTool(BaseTool):
+    description = "Goes back to the previous page in browser history and returns a screenshot."
+    parameters = []
+
+    def call(self, params: str, **kwargs) -> List[ContentItem]:
+        agent = get_agent()
+        path = agent.go_back_and_screenshot()
+        return [ContentItem(image=str(path))]
+
+@register_tool("get_current_url")
+class GetCurrentURL(BaseTool):
+    description = "Returns the current URL of the webpage."
+    parameters = []
+
+    def call(self, params: str, **kwargs) -> List[ContentItem]:
+        agent = get_agent()
+        return [ContentItem(text=agent.get_current_url())]
+
+@register_tool("zoom")
+class Zoom(BaseTool):
+    description = "Magnifies a region of the page (bbox) so that it fills the entire viewport and returns a screenshot."
+
+    parameters = [
+        {
+            "name": "x",
+            "type": "number",
+            "required": True,
+            "description": "Left X coordinate of the bbox in viewport coordinates from 0 to 1000."
+        },
+        {
+            "name": "y",
+            "type": "number",
+            "required": True,
+            "description": "Top Y coordinate of the bbox in viewport coordinates from 0 to 1000."
+        },
+        {
+            "name": "width",
+            "type": "number",
+            "required": True,
+            "description": "Width of the bbox."
+        },
+        {
+            "name": "height",
+            "type": "number",
+            "required": True,
+            "description": "Height of the bbox."
+        }
+    ]
+
+    def call(self, params: str, **kwargs) -> List[ContentItem]:
+        args = json5.loads(params) if params else {}
+        x = args['x']
+        y = args['y']
+        width = args['width']
+        height = args['height']
+        agent = get_agent()
+        path = agent.zoom_bbox_and_screenshot(
+            x=x,
+            y=y,
+            width=width,
+            height=height
+        )
+        return [ContentItem(image=str(path))]
 
 def make_web_tools(agent: WebAgent | None = None) -> list[BaseTool]:
     """Возвращает список зарегистрированных web-tools.
@@ -193,4 +246,7 @@ def make_web_tools(agent: WebAgent | None = None) -> list[BaseTool]:
         TypeTextTool(),
         ScrollTool(),
         WaitTool(),
+        GoBackTool(),
+        GetCurrentURL(),
+        Zoom(),
     ]

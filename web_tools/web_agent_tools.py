@@ -34,7 +34,7 @@ class WebAgent:
     def __init__(
         self,
         headless: bool = True,
-        url: str = "https://www.wildberries.ru/",
+        url: str = "wildberries.ru",
         slow_mo_ms: int = 0,
         viewport: Optional[tuple[int, int]] = (1366, 900),
         user_agent: Optional[str] = None,
@@ -74,7 +74,7 @@ class WebAgent:
         self._page = self._context.new_page()
 
         self._page.goto(self.url, wait_until="domcontentloaded")
-        self.wait_until_stable(max_wait_ms=5000)
+        self.wait_until_stable(max_wait_ms=1000)
 
     # --------------------------- Публичные операции ---------------------------
     @property
@@ -82,7 +82,7 @@ class WebAgent:
         assert self._page is not None, "Страница ещё не инициализирована или агент закрыт"
         return self._page
 
-    def wait_until_stable(self, max_wait_ms: int = 2000, dom_quiet_ms: int = 800) -> None:
+    def wait_until_stable(self, max_wait_ms: int = 500, dom_quiet_ms: int = 500) -> None:
         """Ждёт «стабилизацию» страницы — не только load, но и паузу DOM-мутаций.
 
         Алгоритм:
@@ -107,7 +107,7 @@ class WebAgent:
             pass
         # networkidle может не наступить из-за веб-сокетов; делаем best-effort
         try:
-            p.wait_for_load_state("networkidle", timeout=min(8000, _remaining()))
+            p.wait_for_load_state("networkidle", timeout=min(1000, _remaining()))
         except PWTimeoutError:
             pass
         # Тишина DOM (MutationObserver):
@@ -163,18 +163,20 @@ class WebAgent:
         """
         p = self.page
         # Валидация координат относительно viewport (если он задан)
-        try:
-            vs = p.viewport_size
-            if vs is not None:
-                vw, vh = vs.get("width", 0), vs.get("height", 0)
-                if x < 0 or y < 0 or x >= vw or y >= vh:
-                    raise ValueError(f"Coordinates out of viewport: ({x},{y}) not in [0..{vw-1}]x[0..{vh-1}]")
-        except Exception:
-            # Не прерываем — Playwright сам сообщит об ошибке, если координаты некорректны
-            pass
+        if x is not None and y is not None:
+            try:
+                vs = p.viewport_size
+                if vs is not None:
+                    vw, vh = vs.get("width", 0), vs.get("height", 0)
+                    if x < 0 or y < 0 or x >= vw or y >= vh:
+                        raise ValueError(f"Coordinates out of viewport: ({x},{y}) not in [0..{vw - 1}]x[0..{vh - 1}]")
+            except Exception:
+                # Не прерываем — Playwright сам сообщит об ошибке, если координаты некорректны
+                pass
 
-        # 1) Клик по координатам, чтобы сфокусировать поле
-        p.mouse.click(x, y)
+            # 1) Клик по координатам, чтобы сфокусировать поле
+            p.mouse.click(x, y)
+            p.wait_for_timeout(300)
 
         # 2) Опциональная очистка: Ctrl+A + Delete
         if clear_before:
@@ -226,6 +228,77 @@ class WebAgent:
         p = self.page
         p.wait_for_timeout(ms)
         return self.screenshot(screenshot_path, full_page=full_page)
+
+    def go_back_and_screenshot(
+            self,
+            screenshot_path: Optional[str | os.PathLike] = None,
+            full_page: bool = False,
+    ) -> Path:
+        """Возвращается на предыдущую страницу браузера и делает скриншот.
+
+        - wait_until: событие загрузки страницы перед скрином.
+        """
+        p = self.page
+        p.go_back()
+
+        if self.url not in p.url:
+            p.goto(self.url)
+
+        self.wait_until_stable()
+        return self.screenshot(screenshot_path, full_page=full_page)
+
+    def get_current_url(self) -> str:
+        """Возвращает текущий URL страницы."""
+        return self.page.url
+
+    def zoom_bbox_and_screenshot(
+            self,
+            x: int,
+            y: int,
+            width: int,
+            height: int,
+            screenshot_path: Optional[str | os.PathLike] = None,
+    ) -> Path:
+        """
+        Приближает область (bbox) так, чтобы она заполняла весь viewport, и делает скриншот.
+
+        Координаты bbox — в рамках текущего viewport.
+        """
+        p = self.page
+
+        # Получаем текущее окно
+        viewport = p.viewport_size
+        if viewport is None:
+            vpw = p.evaluate("() => window.innerWidth")
+            vph = p.evaluate("() => window.innerHeight")
+        else:
+            vpw = viewport["width"]
+            vph = viewport["height"]
+
+        # Вычисляем масштаб
+        scale = min(vpw / width, vph / height)
+
+        # Координаты bbox -> сдвигаем страницу так, чтобы bbox оказался в (0, 0) перед масштабированием
+        # То есть мы смещаем body, чтобы левая верхняя точка bbox была в углу экрана.
+        translate_x = -x
+        translate_y = -y
+
+        # Устанавливаем масштаб и сдвиг
+        p.evaluate(
+            """({scale, tx, ty}) => {
+                const body = document.body;
+                body.style.transformOrigin = '0 0';
+                body.style.transform = `translate(${tx}px, ${ty}px) scale(${scale})`;
+            }""",
+            {"scale": scale, "tx": translate_x, "ty": translate_y},
+        )
+
+        self.wait_until_stable()
+        path = self.screenshot(screenshot_path, full_page=False)
+
+        # Восстанавливаем нормальный масштаб
+        p.evaluate("""() => { document.body.style.transform = 'none'; }""")
+        return path
 
     def close(self) -> None:
         """Закрыть страницу/контекст/браузер и Playwright."""
