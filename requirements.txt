@@ -1,3 +1,4 @@
+pydantic~=2.12
 json5
 qwen-agent
 playwright~=1.56.0
