@@ -23,16 +23,6 @@ def init_session(
 def close_session() -> None:
     close_agent()
 
-@register_tool("screenshot")
-class ScreenshotTool(BaseTool):
-    description = "Makes screenshot of the current web-page status. Returns created image."
-    parameters = {}
-
-    def call(self, params: str, **kwargs) -> str:
-        agent = get_agent()
-        path = agent.screenshot()
-        return str(path)
-
 
 @register_tool("click")
 class ClickTool(BaseTool):
@@ -113,13 +103,13 @@ class TypeTextTool(BaseTool):
             'name': 'press_enter',
             'type': 'boolean',
             'description': 'Press Enter after typing.',
-            'required': False
+            'required': True
         },
         {
             'name': 'clear_before',
             'type': 'boolean',
             'description': 'Clears input field before typing.',
-            'required': False
+            'required': True
         },
     ]
 
@@ -128,8 +118,8 @@ class TypeTextTool(BaseTool):
         x = args['x']
         y = args['y']
         text = args['text']
-        press_enter = args.get('press_enter', False)
-        clear_before = args.get('clear_before', True)
+        press_enter = args.get('press_enter', True)
+        clear_before = args.get('clear_before', False)
 
         agent = get_agent()
         path = agent.fill_and_screenshot(
@@ -199,7 +189,6 @@ def make_web_tools(agent: WebAgent | None = None) -> list[BaseTool]:
     так как инструменты работают через singleton get_agent().
     """
     return [
-        ScreenshotTool(),
         ClickTool(),
         TypeTextTool(),
         ScrollTool(),
