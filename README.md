@@ -10,7 +10,7 @@ playwright install-deps
 playwright install chromium
 ```
 
-Пример использования:
+Пример использования вручную:
 
 ```
 from pathlib import Path
@@ -19,7 +19,7 @@ from web_tools import make_web_tools, init_session, close_session
 # Пример создания агента
 web_agent = init_session(screenshot_path=Path("screenshots"), headless=True) # headless=False для отображения браузера
 # Список инструментов для агентной модели
-web_tools = make_web_tools(agent)
+web_tools = make_web_tools(web_agent)
 
 web_agent.screenshot()
 web_agent.click_and_screenshot(100, 100, click_count=1)
