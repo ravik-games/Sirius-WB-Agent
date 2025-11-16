@@ -1,4 +1,4 @@
-from pydantic import BaseSettings
+from pydantic_settings import BaseSettings, SettingsConfigDict
 
 class AgentSettings(BaseSettings):
     model_type: str
@@ -6,7 +6,10 @@ class AgentSettings(BaseSettings):
     model_name: str
     api_key: str
 
-    class Config:
-        env_file = ".env"
+    model_config = SettingsConfigDict(
+        env_file="agent/.env",
+        env_file_encoding="utf-8",
+        extra='ignore'
+    )
 
 settings = AgentSettings()

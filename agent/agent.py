@@ -1,10 +1,10 @@
 from pathlib import Path
 from typing import Optional, List
 
-from agent.web_tools import WebAgent
-from web_tools import make_web_tools, init_session, close_session
-from config import settings
-import prompts
+from .web_tools.web_agent_tools import WebAgent
+from .web_tools import make_web_tools, init_session, close_session
+from .config import settings
+from . import prompts
 
 from qwen_agent.utils.output_beautify import multimodal_typewriter_print
 from qwen_agent.agents import Assistant
@@ -55,7 +55,7 @@ def run_agent(query: str, messages: List = None):
     """
     Запуск агента с заданной историей сообщений и входным запросом.
     """
-    agent, web_agent = get_agents(show_browser=True)
+    agent, web_agent = get_agents(show_browser=False)
 
     if not messages:
         messages = []
@@ -64,7 +64,7 @@ def run_agent(query: str, messages: List = None):
     messages += [
         {"role": "user", "content": [
             {"image": str(start_screen)},
-            {"text": prompts.QUERY_PROMPT} # TODO
+            {"text": prompts.QUERY_PROMPT.format(query=query)}
         ]}
     ]
 
