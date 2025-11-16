@@ -1,0 +1,23 @@
+
+services:
+  api-gateway:
+    build: ./backend/api_gateway
+    container_name: api-gateway
+    ports:
+      - "8000:8000"
+    depends_on:
+      - intent-filter
+
+  intent-filter:
+    build: ./backend/intent_filter
+    container_name: intent-filter
+    ports:
+      - "8001:8001"
+
+  frontend:
+    build: ./frontend
+    container_name: frontend
+    ports:
+      - "3000:80"
+    depends_on:
+      - api-gateway

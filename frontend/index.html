@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <title>Sirius AI Chat</title>
+    <style>
+        body { font-family: Arial; max-width: 600px; margin: 40px auto; }
+        .msg-user { text-align: right; color: blue; margin: 5px 0; }
+        .msg-bot { text-align: left; color: green; margin: 5px 0; }
+    </style>
+</head>
+<body>
+
+<h2>AI Shopping Assistant</h2>
+
+<div id="chat"></div>
+
+<br>
+<input id="input" placeholder="Сообщение..." style="width: 80%;">
+<button onclick="send()">Отправить</button>
+
+<script>
+let userId = null;
+
+async function send() {
+    const text = document.getElementById("input").value;
+    if (!text) return;
+
+    append("user", text);
+    document.getElementById("input").value = "";
+
+    const res = await fetch("http://localhost:8000/chat", {
+        method: "POST",
+        headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({ user_id: userId, text })
+    });
+
+    const data = await res.json();
+    userId = data.user_id;
+
+    append("bot", JSON.stringify(data.reply, null, 2));
+}
+
+function append(sender, text) {
+    const div = document.createElement("div");
+    div.className = sender === "user" ? "msg-user" : "msg-bot";
+    div.innerText = text;
+    document.getElementById("chat").appendChild(div);
+}
+</script>
+
+</body>
+</html>
