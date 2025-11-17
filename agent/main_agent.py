@@ -1,13 +1,14 @@
+import base64
+import os
 from pathlib import Path
 from typing import Optional, List, Generator
-
 import json5
+from qwen_agent.agents import Assistant
 
 from web_tools.web_agent_tools import WebAgent
-from web_tools import make_web_tools, init_session, close_session
+from web_tools import make_web_tools, init_session
 from config import settings
 import prompts
-from qwen_agent.agents import Assistant
 
 # Конфиг работы LLM/VLM модели агента
 llm_cfg = {
@@ -51,6 +52,29 @@ def get_agents(show_browser: bool = False):
 
     return _agent_singleton, _web_agent_singleton
 
+def clear_session():
+    global _web_agent_singleton
+    if _web_agent_singleton is not None:
+        try:
+            _web_agent_singleton.close()
+        finally:
+            _web_agent_singleton = None
+
+def file_to_base64(file_path: str) -> str | None:
+    """
+    Преобразует файл изображения в строку данных Data URI (base64).
+    """
+    if not file_path or not os.path.exists(file_path):
+        return None
+    try:
+        with open(file_path, "rb") as image_file:
+            encoded_string = base64.b64encode(image_file.read()).decode('utf-8')
+            return f"data:image/png;base64,{encoded_string}"
+    except IOError as e:
+        print(f"Ошибка при чтении файла {file_path}: {e}")
+        return None
+
+
 def run_agent(query: str, messages: List = None) -> Generator[str, None, None]:
     """
     Запуск агента с заданной историей сообщений и входным запросом.
@@ -60,10 +84,14 @@ def run_agent(query: str, messages: List = None) -> Generator[str, None, None]:
     if not messages:
         messages = []
 
-    start_screen = web_agent.screenshot()
+    start_screen_path = web_agent.screenshot()
+    start_screen_base64 = file_to_base64(str(start_screen_path))
+    chunk_data = {"type": "image", "content": start_screen_base64}
+    yield json5.dumps(chunk_data, ensure_ascii=False) + "\n"
+
     messages += [
         {"role": "user", "content": [
-            {"image": str(start_screen)},
+            {"image": start_screen_base64},
             {"text": prompts.QUERY_PROMPT.format(query=query)}
         ]}
     ]
@@ -75,18 +103,17 @@ def run_agent(query: str, messages: List = None) -> Generator[str, None, None]:
 
             if isinstance(content, str):
                 chunk_data = {"type": "text", "content": content}
-                yield json5.dumps(chunk_data) + "\n"
+                yield json5.dumps(chunk_data, ensure_ascii=False) + "\n"
             elif isinstance(content, list):
                 for item in content:
                     if 'text' in item and item['text']:
                         chunk_data = {"type": "text", "content": item['text']}
-                        yield json5.dumps(chunk_data) + "\n"
+                        yield json5.dumps(chunk_data, ensure_ascii=False) + "\n"
                     elif 'image' in item and item['image']:
-                        chunk_data = {"type": "image", "content": item['image']}
-                        yield json5.dumps(chunk_data) + "\n"
-                    elif 'image_url' in item and item['image_url'].get('url'):
-                        chunk_data = {"type": "image", "content": item['image_url']['url']}
-                        yield json5.dumps(chunk_data) + "\n"
+                        image_data = item['image']
+                        image_data = file_to_base64(image_data)
+                        chunk_data = {"type": "image", "content": image_data}
+                        yield json5.dumps(chunk_data, ensure_ascii=False) + "\n"
 
-    close_session()
-    yield json5.dumps({"type": "status", "content": "session_closed"}) + "\n"
+    clear_session()
+    yield json5.dumps({"type": "status", "content": "end"}, ensure_ascii=False) + "\n"

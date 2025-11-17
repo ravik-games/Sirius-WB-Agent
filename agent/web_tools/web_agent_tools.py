@@ -72,15 +72,18 @@ class WebAgent:
 
         self._context = self._browser.new_context(**context_args)
         self._page = self._context.new_page()
+        self.new_session()
 
-        self._page.goto(self.url, wait_until="load")
-        self.wait_until_stable(max_wait_ms=1000)
 
     # --------------------------- Публичные операции ---------------------------
     @property
     def page(self) -> Page:
         assert self._page is not None, "Страница ещё не инициализирована или агент закрыт"
         return self._page
+
+    def new_session(self):
+        self._page.goto(self.url, wait_until="load")
+        self.wait_until_stable(max_wait_ms=1000)
 
     def wait_until_stable(self, max_wait_ms: int = 500, dom_quiet_ms: int = 500) -> None:
         """Ждёт «стабилизацию» страницы — не только load, но и паузу DOM-мутаций.
@@ -296,31 +299,8 @@ class WebAgent:
         return path
 
     def close(self) -> None:
-        """Закрыть страницу/контекст/браузер и Playwright."""
-        try:
-            if self._page:
-                self._page.close()
-        except Exception:
-            pass
-        try:
-            if self._context:
-                self._context.close()
-        except Exception:
-            pass
-        try:
-            if self._browser:
-                self._browser.close()
-        except Exception:
-            pass
-        try:
-            if self._playwright_cm:
-                self._playwright_cm.__exit__(None, None, None)
-        except Exception:
-            pass
-        finally:
-            self._page = None
-            self._context = None
-            self._browser = None
+        """Обнулить страницу"""
+        self._page.goto("about:blank")
 
     def _wait_for_dom_quiet(self, quiet_ms: int = 800, timeout_ms: int = 10000) -> None:
         """Ожидание «тишины» DOM — отсутствия мутаций в течение quiet_ms подряд.
@@ -393,13 +373,3 @@ def get_agent(
             screenshot_path=screenshot_path,
         )
     return _agent_singleton
-
-
-def close_agent() -> None:
-    """Явно закрыть singleton-агента и освободить ресурсы."""
-    global _agent_singleton
-    if _agent_singleton is not None:
-        try:
-            _agent_singleton.close()
-        finally:
-            _agent_singleton = None
