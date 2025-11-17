@@ -3,13 +3,14 @@ import httpx
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 
+from storage import Storage
 from schemas import ChatRequest, ChatResponse
-from session_manager import SessionManager
 from config import INTENT_FILTER_URL
 
 
-app = FastAPI(title="API Gateway")
+app = FastAPI(title="API gateway")
 
+# для фронтенда разрешаем все источники
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -18,8 +19,8 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-
-sessions = SessionManager()
+# TODO: база данных
+storage = Storage()
 
 
 @app.get("/health")
@@ -31,13 +32,21 @@ async def health():
 async def chat(request: ChatRequest):
 
     user_id = request.user_id or str(uuid.uuid4())
+    
+    # сохраняем ответ пользователя
+    storage.add_message(user_id, "user", request.text)
 
-    # Добавляем сообщение пользователя
-    sessions.add(user_id, "user", request.text)
+    state = storage.get_state(user_id)
 
     try:
         async with httpx.AsyncClient(timeout=20) as client:
-            response = await client.post(INTENT_FILTER_URL, json={"text": request.text})
+            response = await client.post(
+                INTENT_FILTER_URL,
+                json={
+                    "text": request.text,
+                    "state": state
+                }
+            )
             
         response.raise_for_status()
         
@@ -46,12 +55,34 @@ async def chat(request: ChatRequest):
 
     intent_reply = response.json()
 
-    # Сохраняем ответ сервиса
-    sessions.add(user_id, "tina", intent_reply)
+    # сохраняем ответ тины
+    storage.add_message(user_id, "tina", intent_reply)
+
+    if "state" in intent_reply:
+        storage.set_state(user_id, intent_reply["state"])
+
+    # финальный ответ
+    if intent_reply.get("type") == "final":
+        storage.set_products(user_id, intent_reply)
 
     return ChatResponse(
         user_id=user_id,
         reply=intent_reply,
-        history=sessions.get(user_id)
+        history=storage.get_messages(user_id)
     )
-    
+
+
+
+@app.post("/next_product")
+async def next_product(data: dict):
+    pass
+    # user_id = data.get("user_id")
+    # if not user_id:
+    #     raise HTTPException(status_code=400, detail="user_id required")
+
+    # product = sessions.pop_product(user_id)
+
+    # if not product:
+    #     return {"done": True, "product": None}
+
+    # return {"done": False, "product": product}

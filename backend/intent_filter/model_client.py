@@ -1,11 +1,12 @@
 import httpx
-from config import settings
+from config import Settings
 
+settings = Settings()
 
 class LLMClient:
 
     async def ask(self, prompt: str) -> str:
-        async with httpx.AsyncClient(timeout=30) as client:
+        async with httpx.AsyncClient(timeout=20) as client:
             response = await client.post(
                 f"{settings.MODEL_URL}/chat/completions",
                 headers={
@@ -20,21 +21,19 @@ class LLMClient:
                 }
             )
             
-# Example response:
-#{
-#   "id": "...",
-#   "choices": [
-#     {
-#       "message": {
-#         "role": "...",
-#         "content": "..."
-#       }
-#     }
-#   ]
-# }
+            # Example response:
+            #{
+            #   "id": "...",
+            #   "choices": [
+            #     {
+            #       "message": {
+            #         "role": "...",
+            #         "content": "..."
+            #       }
+            #     }
+            #   ]
+            # }
 
             data = response.json()
 
             return data["choices"][0]["message"]["content"]
-
-llm_client = LLMClient()

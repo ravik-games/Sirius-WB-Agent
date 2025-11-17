@@ -1,5 +1,5 @@
 from fastapi import FastAPI
-from model_client import llm_client
+from model_client import LLMClient
 from classifier import IntentClassifier, DialogueState
 
 from schemas import IntentRequest, IntentResponse
@@ -8,6 +8,7 @@ from schemas import IntentRequest, IntentResponse
 app = FastAPI(title="Intent filter service")
 
 state = DialogueState()
+llm_client = LLMClient()
 classifier = IntentClassifier(llm_client)
 
 
@@ -17,7 +18,18 @@ async def health():
 
 
 @app.post("/intent", response_model=IntentResponse)
-async def intent_endpoint(msg: IntentRequest):
-    result = await classifier.classify(msg.text, state)
-    return result
+async def intent_endpoint(request: IntentRequest):
+    state = DialogueState(
+        original_text=request.state.get("original_text"),
+        awaiting_clarification=request.state.get("awaiting_clarification")
+    )
 
+    result = await classifier.classify(request.text, state)
+
+    return {
+        **result,
+        "state": {
+            "original_text": state.original_text,
+            "awaiting_clarification": state.awaiting_clarification
+        }
+    }

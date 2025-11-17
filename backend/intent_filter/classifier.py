@@ -10,8 +10,6 @@ class IntentClassifier:
     - Извлекает товары
     - Находит отсутствующие атрибуты
     - Задаёт уточняющие вопросы
-    - Спрашивает до тех пор, пока missing_info не пустое у всех товаров
-    - Если пользователь вводит "ИЩИ" → завершаем немедленно
     """
 
     def __init__(self, llm):
@@ -40,6 +38,7 @@ class IntentClassifier:
 
 
     async def classify(self, user_text: str, state):
+        
         # =============== 1. ПОЛЬЗОВАТЕЛЬ ГОВОРИТ "ИЩИ" ===============
         if user_text.strip().lower() in STOP_WORDS:
 
@@ -55,9 +54,7 @@ class IntentClassifier:
 
             return {
                 "type": "final",
-                "products": result.get("products", []),
-                "forced": True,
-                "message": "Ищу по имеющейся информации."
+                "products": result.get("products", [])
             }
 
         # =============== 2. ЭТО ОТВЕТ НА УТОЧНЕНИЕ ===============
@@ -66,7 +63,6 @@ class IntentClassifier:
             result = await self.ask_model(merged)
 
             products = result.get("products", [])
-
 
             still_missing = any(p.get("missing_info") for p in products if p.get("missing_info"))
 
@@ -79,15 +75,13 @@ class IntentClassifier:
                     "question": result.get(
                         "clarification_question",
                         "Уточните недостающие параметры."
-                    ),
-                    "products": products
+                    )
                 }
 
             state.reset()
             return {
                 "type": "final",
-                "products": products,
-                "message": "Спасибо! Я собрал всю информацию."
+                "products": products
             }
 
         # =============== 3. ЭТО ПЕРВЫЙ ЗАПРОС ===============
@@ -109,8 +103,7 @@ class IntentClassifier:
                 "question": result.get(
                     "clarification_question",
                     "Уточните недостающие параметры."
-                ),
-                "products": result.get("products", [])
+                )
             }
 
         state.reset()
@@ -121,9 +114,9 @@ class IntentClassifier:
 
 
 class DialogueState:
-    def __init__(self):
-        self.original_text = None
-        self.awaiting_clarification = False
+    def __init__(self, original_text=None, awaiting_clarification=False):
+        self.original_text = original_text
+        self.awaiting_clarification = awaiting_clarification
 
     def reset(self):
         self.original_text = None
