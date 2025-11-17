@@ -73,7 +73,7 @@ class WebAgent:
         self._context = self._browser.new_context(**context_args)
         self._page = self._context.new_page()
 
-        self._page.goto(self.url, wait_until="domcontentloaded")
+        self._page.goto(self.url, wait_until="load")
         self.wait_until_stable(max_wait_ms=1000)
 
     # --------------------------- Публичные операции ---------------------------
@@ -103,11 +103,6 @@ class WebAgent:
             pass
         try:
             p.wait_for_load_state("load", timeout=_remaining())
-        except PWTimeoutError:
-            pass
-        # networkidle может не наступить из-за веб-сокетов; делаем best-effort
-        try:
-            p.wait_for_load_state("networkidle", timeout=min(1000, _remaining()))
         except PWTimeoutError:
             pass
         # Тишина DOM (MutationObserver):

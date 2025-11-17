@@ -3,7 +3,7 @@ from typing import Optional, List
 import json5
 from qwen_agent.llm.schema import ContentItem
 
-from web_tools.web_agent_tools import close_agent, WebAgent, get_agent
+from .web_agent_tools import WebAgent, get_agent, close_agent
 from qwen_agent.tools.base import BaseTool, register_tool
 
 def init_session(
