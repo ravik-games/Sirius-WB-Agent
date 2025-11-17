@@ -1,18 +1,23 @@
+import asyncio
+import platform
+
 from fastapi import FastAPI
 from .agent import run_agent, init_agent
 
+if platform.system() == 'Windows':
+    asyncio.set_event_loop_policy(asyncio.WindowsProactorEventLoopPolicy())
 app = FastAPI()
 
 @app.post("/agent/startup")
 async def startup():
-    init_agent()
+    await init_agent()
     return {"status": "ok"}
 
 @app.post("/agent/query")
 async def agent_query(payload: dict):
     query = payload.get("query")
     messages = payload.get("messages")
-    result = run_agent(query=query, messages=messages)
+    result = await run_agent(query=query, messages=messages)
     return {"result": result}
 
 @app.get("/agent/health")

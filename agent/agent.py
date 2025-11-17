@@ -1,8 +1,10 @@
 from pathlib import Path
 from typing import Optional, List
 
-from .web_tools.web_agent_tools import WebAgent
-from .web_tools import make_web_tools, init_session, close_session
+import anyio
+
+from .web_tools.web_agent_tools import WebAgent, init_session, close_session
+from .web_tools import make_web_tools
 from .config import settings
 from . import prompts
 
@@ -26,11 +28,11 @@ llm_cfg = {
 _agent_singleton: Optional[Assistant] = None
 _web_agent_singleton: Optional[WebAgent] = None
 
-def init_agent(show_browser: bool = False):
+async def init_agent(show_browser: bool = False):
     """
     Инициализация агентов.
     """
-    web_agent = init_session(screenshot_path=Path("../screenshots"), headless=not show_browser)
+    web_agent = await init_session(screenshot_path=Path("../screenshots"), headless=not show_browser)
     web_tools = make_web_tools()
 
     agent = Assistant(
@@ -40,27 +42,27 @@ def init_agent(show_browser: bool = False):
     )
     return agent, web_agent
 
-def get_agents(show_browser: bool = False):
+async def get_agents(show_browser: bool = False):
     """
     Возвращает созданный или существующий экземпляр Assistant и WebAgent.
     """
     global _agent_singleton, _web_agent_singleton
 
     if _agent_singleton is None:
-        _agent_singleton, _web_agent_singleton = init_agent(show_browser=show_browser)
+        _agent_singleton, _web_agent_singleton = await init_agent(show_browser=show_browser)
 
     return _agent_singleton, _web_agent_singleton
 
-def run_agent(query: str, messages: List = None):
+async def run_agent(query: str, messages: List = None):
     """
     Запуск агента с заданной историей сообщений и входным запросом.
     """
-    agent, web_agent = get_agents(show_browser=False)
+    agent, web_agent = await get_agents(show_browser=False)
 
     if not messages:
         messages = []
 
-    start_screen = web_agent.screenshot()
+    start_screen = await web_agent.screenshot()
     messages += [
         {"role": "user", "content": [
             {"image": str(start_screen)},
@@ -73,6 +75,10 @@ def run_agent(query: str, messages: List = None):
     for ret_messages in agent.run(messages):
         response_plain_text = multimodal_typewriter_print(ret_messages, response_plain_text)
 
-    close_session()
+    await close_session()
 
     return response_plain_text
+
+async def run_agent_async(agent, message):
+    result = await anyio.to_thread.run_sync(agent.run, message)
+    return result
