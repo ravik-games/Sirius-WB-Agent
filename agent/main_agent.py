@@ -19,10 +19,13 @@ llm_cfg = {
 
     'generate_cfg': {
         "temperature": 0.05,
-        "top_p": 1.0,
+        "top_p": 0.9,
         "repetition_penalty": 1.1
     }
 }
+
+# ЗДЕСЬ НАДО СДЕЛАТЬ БД, ЭТО ТОЛЬКО ДЛЯ MVP
+_user_history = dict()
 
 _agent_singleton: Optional[Assistant] = None
 _web_agent_singleton: Optional[WebAgent] = None
@@ -52,7 +55,7 @@ def get_agents(show_browser: bool = False):
 
     return _agent_singleton, _web_agent_singleton
 
-def clear_session():
+def _clear_session():
     global _web_agent_singleton
     if _web_agent_singleton is not None:
         try:
@@ -60,7 +63,7 @@ def clear_session():
         finally:
             _web_agent_singleton = None
 
-def file_to_base64(file_path: str) -> str | None:
+def _file_to_base64(file_path: str) -> str | None:
     """
     Преобразует файл изображения в строку данных Data URI (base64).
     """
@@ -75,19 +78,16 @@ def file_to_base64(file_path: str) -> str | None:
         return None
 
 
-def run_agent(query: str, messages: List = None) -> Generator[str, None, None]:
+def _run_agent(user_id: str, query: str, messages: List) -> Generator[str, None, None]:
     """
     Запуск агента с заданной историей сообщений и входным запросом.
     """
     agent, web_agent = get_agents(show_browser=False)
 
-    if not messages:
-        messages = []
-
     start_screen_path = web_agent.screenshot()
-    start_screen_base64 = file_to_base64(str(start_screen_path))
+    start_screen_base64 = _file_to_base64(str(start_screen_path))
     chunk_data = {"type": "image", "content": start_screen_base64}
-    yield json5.dumps(chunk_data, ensure_ascii=False) + "\n"
+    yield json5.dumps(chunk_data, quote_keys=True, ensure_ascii=False) + "\n"
 
     messages += [
         {"role": "user", "content": [
@@ -103,17 +103,30 @@ def run_agent(query: str, messages: List = None) -> Generator[str, None, None]:
 
             if isinstance(content, str):
                 chunk_data = {"type": "text", "content": content}
-                yield json5.dumps(chunk_data, ensure_ascii=False) + "\n"
+                yield json5.dumps(chunk_data, quote_keys=True, ensure_ascii=False) + "\n"
             elif isinstance(content, list):
                 for item in content:
                     if 'text' in item and item['text']:
                         chunk_data = {"type": "text", "content": item['text']}
-                        yield json5.dumps(chunk_data, ensure_ascii=False) + "\n"
+                        yield json5.dumps(chunk_data, quote_keys=True, ensure_ascii=False) + "\n"
                     elif 'image' in item and item['image']:
                         image_data = item['image']
-                        image_data = file_to_base64(image_data)
+                        image_data = _file_to_base64(image_data)
                         chunk_data = {"type": "image", "content": image_data}
-                        yield json5.dumps(chunk_data, ensure_ascii=False) + "\n"
+                        yield json5.dumps(chunk_data, quote_keys=True, ensure_ascii=False) + "\n"
 
-    clear_session()
-    yield json5.dumps({"type": "status", "content": "end"}, ensure_ascii=False) + "\n"
+    global _user_history
+    _user_history[user_id] = messages
+
+    _clear_session()
+    yield json5.dumps({"type": "status", "content": "end"}, quote_keys=True, ensure_ascii=False) + "\n"
+
+def run_new_search(user_id: str, query: str) -> Generator[str, None, None]:
+    global _user_history
+    _user_history[user_id] = []
+    yield from _run_agent(user_id, query, [])
+
+def clarify_search(user_id: str, query: str) -> Generator[str, None, None]:
+    global _user_history
+    messages = _user_history.get(user_id, [])
+    yield from _run_agent(user_id, query, messages)
