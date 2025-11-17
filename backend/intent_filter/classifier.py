@@ -59,7 +59,7 @@ class IntentClassifier:
 
         # =============== 2. ЭТО ОТВЕТ НА УТОЧНЕНИЕ ===============
         if state.awaiting_clarification:
-            merged = state.original_text + ". " + user_text
+            merged = state.original_text + ". Уточнение пользователя:" + user_text
             result = await self.ask_model(merged)
 
             products = result.get("products", [])

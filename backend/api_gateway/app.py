@@ -5,7 +5,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from storage import Storage
 from schemas import ChatRequest, ChatResponse
-from config import INTENT_FILTER_URL
+from config import INTENT_FILTER_URL, PRODUCT_AGENT_URL
 
 
 app = FastAPI(title="API gateway")
@@ -35,6 +35,12 @@ async def chat(request: ChatRequest):
     
     # сохраняем ответ пользователя
     storage.add_message(user_id, "user", request.text)
+    
+    # ---- Если intent уже завершён — игнорируем текст ----
+    # if storage.has_products(user_id):
+    #     # вместо ошибки начинаем выдавать товары автоматически
+    #     next_item = storage.pop_product(user_id)
+    #     return await process_product(user_id, next_item)
 
     state = storage.get_state(user_id)
 
@@ -71,18 +77,3 @@ async def chat(request: ChatRequest):
         history=storage.get_messages(user_id)
     )
 
-
-
-@app.post("/next_product")
-async def next_product(data: dict):
-    pass
-    # user_id = data.get("user_id")
-    # if not user_id:
-    #     raise HTTPException(status_code=400, detail="user_id required")
-
-    # product = sessions.pop_product(user_id)
-
-    # if not product:
-    #     return {"done": True, "product": None}
-
-    # return {"done": False, "product": product}

@@ -45,8 +45,9 @@ OUTPUT FORMAT (STRICT JSON):
         "color": "...",
         "size": "...",
         "brand": "...",
+        "others": "..."
       },
-      "missing_info": ["color", "size"]
+      "missing_info": ["color", "size", "brand"]
     }
   ],
   "need_clarification": true/false,

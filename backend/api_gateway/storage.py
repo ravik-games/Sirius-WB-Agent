@@ -29,6 +29,9 @@ class Storage:
         self.pending_products = intent.get("products", [])
         self.history.setdefault(user_id, [])
         
+    def has_products(self, user_id: str) -> bool:
+        return bool(self.pending_products.get(user_id))
+        
     
     def pop_product(self, user_id: str):
         items = self.pending_products.get(user_id, [])

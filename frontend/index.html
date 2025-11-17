@@ -1,33 +1,110 @@
 <!DOCTYPE html>
 <html lang="ru">
 <head>
-    <meta charset="UTF-8">
+    <meta charset="UTF-8"/>
     <title>Sirius AI Chat</title>
     <style>
-        body { font-family: Arial; max-width: 600px; margin: 40px auto; }
-        .msg-user { text-align: right; color: blue; margin: 5px 0; }
-        .msg-bot { text-align: left; color: green; margin: 5px 0; }
+        body { 
+            font-family: Arial; 
+            max-width: 700px; 
+            margin: 40px auto; 
+            background: #f9f9f9;
+        }
+        #chat-box {
+            background: white;
+            padding: 20px;
+            border-radius: 10px;
+            min-height: 400px;
+            box-shadow: 0 0 10px rgba(0,0,0,0.1);
+        }
+        .msg {
+            margin: 10px 0;
+            padding: 8px 12px;
+            border-radius: 6px;
+            max-width: 80%;
+            white-space: pre-wrap;
+        }
+        .user {
+            background: #dce9ff;
+            text-align: right;
+            margin-left: 20%;
+        }
+        .bot {
+            background: #e4ffe4;
+            text-align: left;
+        }
+        .status-box {
+            background: #fff3cd;
+            border-left: 4px solid #ffca2c;
+            padding: 10px;
+            margin-top: 10px;
+        }
+        input {
+            width: 80%;
+            padding: 8px;
+            font-size: 16px;
+        }
+        button {
+            padding: 8px 16px;
+            font-size: 16px;
+        }
+        button:disabled {
+            background: #aaa;
+            cursor: not-allowed;
+        }
     </style>
 </head>
+
 <body>
 
-<h2>AI Shopping Assistant</h2>
+<h2>🛍️ Sirius AI Shopping Assistant</h2>
 
-<div id="chat"></div>
+<div id="chat-box"></div>
+
+<div class="status-box" id="status-box">
+    <b>Статус:</b> <span id="status-text">ожидание...</span>
+</div>
 
 <br>
-<input id="input" placeholder="Сообщение..." style="width: 80%;">
-<button onclick="send()">Отправить</button>
+
+<input id="input" placeholder="Введите сообщение..." />
+<button id="send-btn" onclick="send()">Отправить</button>
 
 <script>
 let userId = null;
 
+function addMessage(sender, text) {
+    const div = document.createElement("div");
+    div.className = "msg " + sender;
+    div.innerText = text;
+    document.getElementById("chat-box").appendChild(div);
+}
+
+function updateStatus(intentReply) {
+    const status = intentReply.type;
+    document.getElementById("status-text").innerText = status;
+
+    // 🔥 Блокируем кнопку после финального ответа
+    if (status === "final") {
+        document.getElementById("send-btn").disabled = true;
+        document.getElementById("input").disabled = true;
+
+        addMessage("bot", "🔍 Поиск кандидатов... Ожидайте.");
+    } 
+}
+
 async function send() {
-    const text = document.getElementById("input").value;
+    const btn = document.getElementById("send-btn");
+    const input = document.getElementById("input");
+
+    const text = input.value;
     if (!text) return;
 
-    append("user", text);
-    document.getElementById("input").value = "";
+    addMessage("user", text);
+    input.value = "";
+    
+    // Блокируем кнопку пока запрос выполняется
+    btn.disabled = true;
 
     const res = await fetch("http://localhost:8000/chat", {
         method: "POST",
@@ -38,14 +115,30 @@ async function send() {
     const data = await res.json();
     userId = data.user_id;
 
-    append("bot", JSON.stringify(data.reply, null, 2));
-}
+    updateStatus(data.reply);
 
-function append(sender, text) {
-    const div = document.createElement("div");
-    div.className = sender === "user" ? "msg-user" : "msg-bot";
-    div.innerText = text;
-    document.getElementById("chat").appendChild(div);
+    let replyText = "";
+
+    if (data.reply.type === "clarification") {
+        replyText = "🤖 Уточнение: " + data.reply.question;
+    } 
+    else if (data.reply.type === "not_relevant") {
+        replyText = "⚠️ Нерелевантно: " + data.reply.message;
+    }
+    else if (data.reply.type === "final") {
+        replyText = "🎯 Финальный результат:\n" +
+                    JSON.stringify(data.reply.products, null, 2);
+    } 
+    else {
+        replyText = JSON.stringify(data.reply, null, 2);
+    }
+
+    addMessage("bot", replyText);
+
+    // Разблокировать кнопку, если НЕ финальный статус
+    if (data.reply.type !== "final") {
+        btn.disabled = false;
+    }
 }
 </script>
 
