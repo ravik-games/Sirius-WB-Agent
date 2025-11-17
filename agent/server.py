@@ -14,7 +14,7 @@ def startup():
 def agent_query(payload: dict):
     query = payload.get("query")
     user_id = payload.get("user_id")
-    result_generator = run_new_search(user_id=user_id, query=query)
+    result_generator = run_new_search(user_id=user_id, query=query)   
     return StreamingResponse(result_generator, media_type="application/x-jsonl; charset=utf-8")
 
 @app.post("/agent/clarify")

@@ -1,14 +1,13 @@
-import uuid
 import httpx
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import StreamingResponse
 from fastapi.middleware.cors import CORSMiddleware
-import json 
+import json5
+import json
 
 from storage import Storage
-from schemas import ChatRequest, ChatResponse
+from schemas import ChatRequest, ChatResponse, RunAgentRequest
 from config import INTENT_FILTER_URL, AGENT_URL
-
 
 app = FastAPI(title="API gateway")
 
@@ -22,6 +21,8 @@ app.add_middleware(
 )
 
 # TODO: база данных
+USER_ID = "user_1"
+
 storage = Storage()
 
 
@@ -30,10 +31,22 @@ async def health():
     return {"status": "ok"}
 
 
+@app.post("/agent/start")
+async def start_agent():
+    try:
+        async with httpx.AsyncClient() as client:
+            resp = await client.post(f"{AGENT_URL}/agent/startup")
+            resp.raise_for_status()
+    except Exception as err:
+        raise HTTPException(status_code=500, detail=f"Agent startup failed: {err}")
+
+    return resp.json()
+
+
 @app.post("/chat", response_model=ChatResponse)
 async def chat(request: ChatRequest):
 
-    user_id = request.user_id or str(uuid.uuid4())
+    user_id = USER_ID
     
     # сохраняем ответ пользователя
     storage.add_message(user_id, "user", request.text)
@@ -74,126 +87,37 @@ async def chat(request: ChatRequest):
     )
     
     
-@app.post("/chat/stream")
-async def stream_all_products(payload: dict):
-    
-    user_id = payload.get("user_id")
-    
-    if not user_id:
-        raise HTTPException(400, "user_id required")
-
-    # стартуем агента (может быть уже запущен)
-    try:
-        async with httpx.AsyncClient() as client:
-            await client.post(f"{AGENT_URL}/agent/startup")
-    except:
-        pass
-
-    async def product_stream():
-
-        # --- цикл по продуктам ---
-        while storage.has_products(user_id):
-
-            product = storage.pop_product(user_id)
-            if not product:
-                break
-
-            yield (json.dumps({
-                "event": "start_product",
-                "product": product
-            }) + "\n").encode()
-
-            # --- вызов агента ---
-            async with httpx.AsyncClient(timeout=None) as client:
-                resp = await client.post(
-                    f"{AGENT_URL}/agent/query",
-                    json={"query": product, "messages": []},
-                    timeout=None
-                )
-                resp.raise_for_status()
-
-                async for raw_line in resp.aiter_lines():
-                    if not raw_line:
-                        continue
-                    try:
-                        data = json.loads(raw_line)
-                    except:
-                        continue
-
-                    # --- image ---
-                    if data.get("type") == "image":
-                        yield (json.dumps({
-                            "event": "image",
-                            "url": data["url"]
-                        }) + "\n").encode()
-
-                    # --- text ---
-                    elif data.get("type") == "text":
-                        yield (json.dumps({
-                            "event": "text",
-                            "content": data["content"]
-                        }) + "\n").encode()
-
-                    # --- конец продукта ---
-                    elif data.get("status") == "end":
-
-                        # сохраняем полноценного кандидата
-                        storage.add_candidate(user_id, {
-                            "product": product,
-                            "result": data.get("result"),      # если есть
-                        })
-
-                        yield (json.dumps({
-                            "event": "end_product",
-                            "product": product
-                        }) + "\n").encode()
-
-                        # если накопилось 3 кандидата → прерываем стрим
-                        if len(storage.get_candidates(user_id)) >= 3:
-                            yield (json.dumps({
-                                "event": "need_clarification",
-                                "candidates": storage.get_candidates(user_id)
-                            }) + "\n").encode()
-                            return
-
-                        break
-
-        # --- если товары кончились, но кандидатов < 3 ---
-        yield (json.dumps({
-            "event": "all_done"
-        }) + "\n").encode()
-
-    return StreamingResponse(product_stream(), media_type="application/x-jsonl")
-
-
-
-@app.post("/agent/start")
-async def start_agent():
-    try:
-        async with httpx.AsyncClient() as client:
-            resp = await client.post(f"{AGENT_URL}/agent/startup")
-            resp.raise_for_status()
-    except Exception as err:
-        raise HTTPException(status_code=500, detail=f"Agent startup failed: {err}")
-
-    return resp.json()
-
-
 @app.post("/agent/run")
-async def run_agent(payload: dict):
+async def run_agent(req: RunAgentRequest):
 
-    query = payload.get("query")
-    messages = payload.get("messages", [])
+    user_id = req.user_id
+    
+    product = storage.pop_product(user_id)
+    
+    if not product:
+        raise HTTPException(404, "no products")
 
-    if not query:
-        raise HTTPException(status_code=400, detail="query is required")
+    async def stream():
+        async with httpx.AsyncClient(timeout=None) as client:
+            async with client.stream(
+                "POST",
+                f"{AGENT_URL}/agent/query",
+                json={"query": product, "user_id": user_id},
+            ) as resp:
+                
+                async for chunk in resp.aiter_lines():
+                    line = chunk.strip()
+                    if not line:
+                        continue
 
-    async with httpx.AsyncClient(timeout=None) as client:
-        resp = await client.post(
-            f"{AGENT_URL}/agent/query",
-            json={"query": query, "messages": messages},
-            timeout=None
-        )
-        resp.raise_for_status()
+                    try:
+                        event = json5.loads(line)
+                        safe_json = json.dumps(event, ensure_ascii=False)
+                        
+                    except Exception as e:
+                        print("JSON ERROR:", line, e)
+                        continue
 
-    return StreamingResponse(resp.aiter_raw(), media_type="application/x-jsonl")
+                    yield safe_json + "\n"
+
+    return StreamingResponse(stream(), media_type="application/x-jsonl")

@@ -64,10 +64,14 @@
         .stream-container {
             width: 50%;
             padding: 30px;
-            overflow-y: auto;
             background: #ffffff;
             border-left: 2px solid #ddd;
+
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
         }
+
 
         .stream-item {
             background: #f7f7f7;
@@ -105,6 +109,58 @@
             background: #aaa;
             cursor: not-allowed;
         }
+
+        /* Общий контейнер секций (текст/фото) */
+        .stream-section {
+            display: flex;
+            flex-direction: column;
+            flex: 1;
+
+            background: #f5f7fb;                 /* мягкий светлый фон */
+            border: 1px solid #e1e5ee;           /* тонкая рамка */
+            border-radius: 12px;
+            padding: 15px 18px;
+            margin-bottom: 20px;
+
+            box-shadow: 0 4px 10px rgba(0,0,0,0.05);   /* мягкая тень */
+        }
+
+        /* Заголовки потоков */
+        .stream-section h3 {
+            margin: 0 0 10px 0;
+            color: #333;
+            font-weight: 600;
+        }
+
+        /* Прокручиваемые зоны */
+        .stream-box {
+            height: 40vh;           /* 💡 ЭТО ВКЛЮЧАЕТ СКРОЛЛ */
+            overflow-y: auto;
+            background: white;
+            border-radius: 10px;
+            padding: 10px;
+            border: 1px solid #ccc;
+        }
+
+        /* Элемент текста */
+        .stream-item {
+            background: #eef4ff;
+            padding: 12px;
+            border-radius: 8px;
+            margin-bottom: 10px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+        }
+
+        /* Фото */
+        .stream-image {
+            width: 100%;
+            max-width: 100%;
+            border-radius: 12px;
+            margin-bottom: 10px;
+
+            box-shadow: 0 3px 10px rgba(0,0,0,0.15);
+        }
+
     </style>
 </head>
 
@@ -115,9 +171,8 @@
     <!-- ---------------- ЛЕВАЯ ПАНЕЛЬ — ЧАТ ---------------- -->
     <div class="chat-container">
 
-        <h2>🛍️ TINA - T-Intelligent assistant (Shopping) </h2>
+        <h2>🛍️ TINA - T-Intelligent assistant </h2>
 
-        <!-- ПРОКРУЧИВАЕМЫЙ БЛОК -->
         <div id="chat-box" class="chat-scroll"></div>
 
         <div class="status-box" id="status-box">
@@ -129,9 +184,22 @@
 
     <!-- ---------------- ПРАВАЯ ПАНЕЛЬ — СТРИМ ---------------- -->
     <div class="stream-container">
-        <h2>📡 Поток кандидатов</h2>
-        <div id="stream-box"></div>
+        <h2>📡 Stream</h2>
+
+        <!-- Блок фотографий -->
+        <div class="stream-section">
+            <h3>Экран</h3>
+            <div id="stream-photo" class="stream-box"></div>
+        </div>  <!-- ← ЭТОТ ЗАКРЫВАЮЩИЙ DIV У ТЕБЯ ОТСУТСТВОВАЛ -->
+
+        <!-- Блок текста -->
+        <div class="stream-section">
+            <h3>Поток мыслей</h3>
+            <div id="stream-text" class="stream-box"></div>
     </div>
+
+</div>
+
 
 </div>
 
@@ -143,8 +211,7 @@
 
 
 <script>
-/* ------------- ТВОЙ JS БЕЗ ИЗМЕНЕНИЙ -------------- */
-let userId = null;
+let userId = "user_1";
 
 function addMessage(sender, text) {
     const div = document.createElement("div");
@@ -187,7 +254,6 @@ async function send() {
     });
 
     const data = await res.json();
-    userId = data.user_id;
 
     updateStatus(data.reply);
 
@@ -214,127 +280,82 @@ async function send() {
     }
 }
 
+
+
 function addStreamText(text) {
+    const box = document.getElementById("stream-text");
     const div = document.createElement("div");
     div.className = "stream-item";
     div.innerText = text;
-    document.getElementById("stream-box").appendChild(div);
+    box.appendChild(div);
+
+    // автоскролл
+    box.scrollTop = box.scrollHeight;
 }
 
-async function runStream() {
-    console.log("▶️ runStream start, user:", userId);
+function addStreamPhoto(url) {
+    const box = document.getElementById("stream-photo");
+    const img = document.createElement("img");
+    img.className = "stream-image";
+    img.src = url;
+    box.appendChild(img);
+    box.scrollTop = box.scrollHeight;
+}
 
-    const resp = await fetch("http://localhost:8000/chat/stream", {
+
+
+async function runStream() {
+
+    addStreamText("⏳ Стрим запущен. Ждём агента...");
+
+    const resp = await fetch("http://localhost:8000/agent/run", {
         method: "POST",
-        headers: {"Content-Type": "application/json"},
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ user_id: userId })
     });
 
     const reader = resp.body.getReader();
     const decoder = new TextDecoder();
 
-    // текущая карточка продукта
-    let currentCard = null;
-    let currentGallery = null;
-    let currentTextBlock = null;
+    let buffer = "";
 
     while (true) {
+
         const { value, done } = await reader.read();
-        if (done) break;
 
-        const chunk = decoder.decode(value);
-        const lines = chunk.split("\n").filter(x => x.trim().length > 0);
+        if (done) {
+            addStreamText("⏹ Стрим завершён от сервера.");
+            break;
+        }
 
-        for (const line of lines) {
+        buffer += decoder.decode(value, { stream: true });
+
+        let lines = buffer.split("\n");
+        buffer = lines.pop();
+
+        for (let line of lines) {
+
+            if (!line.trim()) continue;
+
             let event;
-            try { event = JSON.parse(line); }
-            catch { continue; }
-
-            console.log("STREAM EVENT:", event);
-
-            /* ---------------- START_PRODUCT ---------------- */
-            if (event.event === "start_product") {
-                const card = document.createElement("div");
-                card.className = "product-card";
-
-                const title = document.createElement("div");
-                title.className = "product-title";
-                title.innerText = "🛒 " + (event.product.title || event.product);
-
-                const gallery = document.createElement("div");
-                gallery.className = "product-gallery";
-
-                const textBlock = document.createElement("div");
-                textBlock.className = "product-text";
-                textBlock.innerText = "";
-
-                card.appendChild(title);
-                card.appendChild(gallery);
-                card.appendChild(textBlock);
-
-                document.getElementById("stream-box").appendChild(card);
-
-                currentCard = card;
-                currentGallery = gallery;
-                currentTextBlock = textBlock;
+            try {
+                event = JSON.parse(line);
+            } catch (err) {
+                addStreamText("⚠ Плохой JSON: " + line);
+                continue;
             }
 
-            /* ---------------- IMAGE ---------------- */
-            else if (event.event === "image") {
-                if (currentGallery) {
-                    const img = document.createElement("img");
-                    img.src = event.url;
-                    currentGallery.appendChild(img);
-                }
+            if (event.type === "text") {
+                addStreamText(event.content);
             }
 
-            /* ---------------- TEXT ---------------- */
-            else if (event.event === "text") {
-                if (currentTextBlock) {
-                    currentTextBlock.innerText += event.content + "\n\n";
-                }
+            else if (event.type === "image") {
+                addStreamPhoto(event.content);
+
             }
 
-            /* ---------------- END_PRODUCT ---------------- */
-            else if (event.event === "end_product") {
-                if (currentCard) {
-                    currentCard.style.border = "2px solid #4caf50";
-                }
-            }
-
-            /* ---------------- NEED_CLARIFICATION ---------------- */
-            else if (event.event === "need_clarification") {
-
-                addStreamText("🟨 Требуется уточнение. Показаны 3 кандидата.");
-
-                // Рендерим список кандидатов в стрим-панель
-                const box = document.getElementById("stream-box");
-
-                const clar = document.createElement("div");
-                clar.className = "stream-item";
-                clar.innerHTML = "<b>Нужны уточнения. Выберите товар:</b>";
-
-                for (const c of event.candidates) {
-                    const btn = document.createElement("button");
-                    btn.style.margin = "8px";
-                    btn.innerText = c.product.title || c.product;
-
-                    btn.onclick = () => {
-                        console.log("Выбран кандидат:", c);
-                        // TODO отправить выбор в чат (/chat)
-                    };
-
-                    clar.appendChild(btn);
-                }
-
-                box.appendChild(clar);
-
-                return; // ⛔ стоп стрима, ждём уточнения
-            }
-
-            /* ---------------- ВСЕ ГОТОВО ---------------- */
-            else if (event.event === "all_done") {
-                addStreamText("🎉 Все товары обработаны.");
+            else if (event.type === "status" && event.content === "end") {
+                addStreamText("✔ Кандидат полностью сформирован.");
                 return;
             }
         }

@@ -16,3 +16,7 @@ class ChatResponse(BaseModel):
     user_id: str
     reply: Any
     history: List[MessageEntry]
+
+class RunAgentRequest(BaseModel):
+    user_id: str
+
