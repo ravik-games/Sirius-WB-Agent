@@ -2,21 +2,38 @@
 <html lang="ru">
 <head>
     <meta charset="UTF-8"/>
-    <title>Sirius AI Chat</title>
+    <title>TINA</title>
     <style>
         body { 
             font-family: Arial; 
-            max-width: 700px; 
-            margin: 40px auto; 
+            margin: 0;
+            background: #f9f9f9;
+            overflow: hidden;
+        }
+
+        /* Лейаут 2 панели */
+        .layout {
+            display: flex;
+            height: 100vh;
+        }
+
+        /* ===== ЛЕВАЯ ПАНЕЛЬ — ЧАТ (твой исходный стиль) ===== */
+        .chat-container {
+            width: 50%;
+            padding: 30px;
+            overflow-y: visible;
             background: #f9f9f9;
         }
+
         #chat-box {
             background: white;
             padding: 20px;
             border-radius: 10px;
-            min-height: 400px;
+            height: calc(100vh - 300px);
+            overflow-y: auto;
             box-shadow: 0 0 10px rgba(0,0,0,0.1);
         }
+
         .msg {
             margin: 10px 0;
             padding: 8px 12px;
@@ -24,31 +41,67 @@
             max-width: 80%;
             white-space: pre-wrap;
         }
+
         .user {
             background: #dce9ff;
             text-align: right;
             margin-left: 20%;
         }
+
         .bot {
             background: #e4ffe4;
             text-align: left;
         }
+
         .status-box {
             background: #fff3cd;
             border-left: 4px solid #ffca2c;
             padding: 10px;
             margin-top: 10px;
         }
-        input {
+
+        /* ===== ПРАВАЯ ПАНЕЛЬ — СТРИМ ===== */
+        .stream-container {
+            width: 50%;
+            padding: 30px;
+            overflow-y: auto;
+            background: #ffffff;
+            border-left: 2px solid #ddd;
+        }
+
+        .stream-item {
+            background: #f7f7f7;
+            padding: 12px;
+            margin-bottom: 12px;
+            border-radius: 8px;
+            box-shadow: 0 0 5px rgba(0,0,0,0.1);
+        }
+
+        .stream-image {
+            max-width: 100%;
+            border-radius: 10px;
+        }
+
+        /* ===== INPUT PANEL ===== */
+        .input-row {
+            position: fixed;
+            bottom: 20px;
+            left: 30px;
+            width: calc(50% - 60px);
+            display: flex;
+            gap: 10px;
+        }
+
+        .input-row input {
             width: 80%;
             padding: 8px;
             font-size: 16px;
         }
-        button {
+        .input-row button {
             padding: 8px 16px;
             font-size: 16px;
         }
-        button:disabled {
+        .input-row button:disabled {
             background: #aaa;
             cursor: not-allowed;
         }
@@ -57,20 +110,40 @@
 
 <body>
 
-<h2>🛍️ Sirius AI Shopping Assistant</h2>
+<div class="layout">
 
-<div id="chat-box"></div>
+    <!-- ---------------- ЛЕВАЯ ПАНЕЛЬ — ЧАТ ---------------- -->
+    <div class="chat-container">
 
-<div class="status-box" id="status-box">
-    <b>Статус:</b> <span id="status-text">ожидание...</span>
+        <h2>🛍️ TINA - T-Intelligent assistant (Shopping) </h2>
+
+        <!-- ПРОКРУЧИВАЕМЫЙ БЛОК -->
+        <div id="chat-box" class="chat-scroll"></div>
+
+        <div class="status-box" id="status-box">
+            <b>Статус:</b>
+            <span id="status-text">ожидание...</span>
+        </div>
+
+    </div>
+
+    <!-- ---------------- ПРАВАЯ ПАНЕЛЬ — СТРИМ ---------------- -->
+    <div class="stream-container">
+        <h2>📡 Поток кандидатов</h2>
+        <div id="stream-box"></div>
+    </div>
+
 </div>
 
-<br>
+<!-- ===== ФИКСИРОВАННАЯ ПАНЕЛЬ ВВОДА ===== -->
+<div class="input-row">
+    <input id="input" placeholder="Введите сообщение..." />
+    <button id="send-btn" onclick="send()">Отправить</button>
+</div>
 
-<input id="input" placeholder="Введите сообщение..." />
-<button id="send-btn" onclick="send()">Отправить</button>
 
 <script>
+/* ------------- ТВОЙ JS БЕЗ ИЗМЕНЕНИЙ -------------- */
 let userId = null;
 
 function addMessage(sender, text) {
@@ -78,32 +151,33 @@ function addMessage(sender, text) {
     div.className = "msg " + sender;
     div.innerText = text;
     document.getElementById("chat-box").appendChild(div);
+
+    // автоскролл вниз
+    const box = document.getElementById("chat-box");
+    box.scrollTop = box.scrollHeight;
 }
 
 function updateStatus(intentReply) {
     const status = intentReply.type;
     document.getElementById("status-text").innerText = status;
 
-    // 🔥 Блокируем кнопку после финального ответа
     if (status === "final") {
         document.getElementById("send-btn").disabled = true;
         document.getElementById("input").disabled = true;
-
         addMessage("bot", "🔍 Поиск кандидатов... Ожидайте.");
-    } 
+        runStream();
+    }
 }
 
 async function send() {
     const btn = document.getElementById("send-btn");
     const input = document.getElementById("input");
-
     const text = input.value;
+
     if (!text) return;
 
     addMessage("user", text);
     input.value = "";
-    
-    // Блокируем кнопку пока запрос выполняется
     btn.disabled = true;
 
     const res = await fetch("http://localhost:8000/chat", {
@@ -135,12 +209,139 @@ async function send() {
 
     addMessage("bot", replyText);
 
-    // Разблокировать кнопку, если НЕ финальный статус
     if (data.reply.type !== "final") {
         btn.disabled = false;
     }
 }
-</script>
 
+function addStreamText(text) {
+    const div = document.createElement("div");
+    div.className = "stream-item";
+    div.innerText = text;
+    document.getElementById("stream-box").appendChild(div);
+}
+
+async function runStream() {
+    console.log("▶️ runStream start, user:", userId);
+
+    const resp = await fetch("http://localhost:8000/chat/stream", {
+        method: "POST",
+        headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({ user_id: userId })
+    });
+
+    const reader = resp.body.getReader();
+    const decoder = new TextDecoder();
+
+    // текущая карточка продукта
+    let currentCard = null;
+    let currentGallery = null;
+    let currentTextBlock = null;
+
+    while (true) {
+        const { value, done } = await reader.read();
+        if (done) break;
+
+        const chunk = decoder.decode(value);
+        const lines = chunk.split("\n").filter(x => x.trim().length > 0);
+
+        for (const line of lines) {
+            let event;
+            try { event = JSON.parse(line); }
+            catch { continue; }
+
+            console.log("STREAM EVENT:", event);
+
+            /* ---------------- START_PRODUCT ---------------- */
+            if (event.event === "start_product") {
+                const card = document.createElement("div");
+                card.className = "product-card";
+
+                const title = document.createElement("div");
+                title.className = "product-title";
+                title.innerText = "🛒 " + (event.product.title || event.product);
+
+                const gallery = document.createElement("div");
+                gallery.className = "product-gallery";
+
+                const textBlock = document.createElement("div");
+                textBlock.className = "product-text";
+                textBlock.innerText = "";
+
+                card.appendChild(title);
+                card.appendChild(gallery);
+                card.appendChild(textBlock);
+
+                document.getElementById("stream-box").appendChild(card);
+
+                currentCard = card;
+                currentGallery = gallery;
+                currentTextBlock = textBlock;
+            }
+
+            /* ---------------- IMAGE ---------------- */
+            else if (event.event === "image") {
+                if (currentGallery) {
+                    const img = document.createElement("img");
+                    img.src = event.url;
+                    currentGallery.appendChild(img);
+                }
+            }
+
+            /* ---------------- TEXT ---------------- */
+            else if (event.event === "text") {
+                if (currentTextBlock) {
+                    currentTextBlock.innerText += event.content + "\n\n";
+                }
+            }
+
+            /* ---------------- END_PRODUCT ---------------- */
+            else if (event.event === "end_product") {
+                if (currentCard) {
+                    currentCard.style.border = "2px solid #4caf50";
+                }
+            }
+
+            /* ---------------- NEED_CLARIFICATION ---------------- */
+            else if (event.event === "need_clarification") {
+
+                addStreamText("🟨 Требуется уточнение. Показаны 3 кандидата.");
+
+                // Рендерим список кандидатов в стрим-панель
+                const box = document.getElementById("stream-box");
+
+                const clar = document.createElement("div");
+                clar.className = "stream-item";
+                clar.innerHTML = "<b>Нужны уточнения. Выберите товар:</b>";
+
+                for (const c of event.candidates) {
+                    const btn = document.createElement("button");
+                    btn.style.margin = "8px";
+                    btn.innerText = c.product.title || c.product;
+
+                    btn.onclick = () => {
+                        console.log("Выбран кандидат:", c);
+                        // TODO отправить выбор в чат (/chat)
+                    };
+
+                    clar.appendChild(btn);
+                }
+
+                box.appendChild(clar);
+
+                return; // ⛔ стоп стрима, ждём уточнения
+            }
+
+            /* ---------------- ВСЕ ГОТОВО ---------------- */
+            else if (event.event === "all_done") {
+                addStreamText("🎉 Все товары обработаны.");
+                return;
+            }
+        }
+    }
+}
+
+
+</script>
 </body>
 </html>

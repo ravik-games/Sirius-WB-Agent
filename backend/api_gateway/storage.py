@@ -7,6 +7,8 @@ class Storage:
         self.history: Dict[str, List[MessageEntry]] = {}
         self.states: dict[str, dict] = {}
         self.pending_products: Dict[str, List[dict]] = {}
+        self.candidates: Dict[str, List[dict]] = {}   # ← новое
+
         
 
     def add_message(self, user_id: str, sender: str, content: Any):
@@ -26,19 +28,30 @@ class Storage:
         
 
     def set_products(self, user_id: str, intent):
-        self.pending_products = intent.get("products", [])
-        self.history.setdefault(user_id, [])
+        self.pending_products[user_id] = intent.get("products", [])
+
         
     def has_products(self, user_id: str) -> bool:
         return bool(self.pending_products.get(user_id))
+
         
-    
     def pop_product(self, user_id: str):
         items = self.pending_products.get(user_id, [])
         if not items:
             return None
         return items.pop(0)
     
+
+    def add_candidate(self, user_id: str, candidate: dict):
+        self.candidates.setdefault(user_id, []).append(candidate)
+
+
+    def get_candidates(self, user_id: str):
+        return self.candidates.get(user_id, [])
+
+
+    def clear_candidates(self, user_id: str):
+        self.candidates[user_id] = []
 
 
 
