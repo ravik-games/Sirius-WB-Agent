@@ -1,12 +1,12 @@
 from pathlib import Path
-from typing import Optional, List
+from typing import Optional, List, Generator
 
-from .web_tools.web_agent_tools import WebAgent
-from .web_tools import make_web_tools, init_session, close_session
-from .config import settings
-from . import prompts
+import json5
 
-from qwen_agent.utils.output_beautify import multimodal_typewriter_print
+from web_tools.web_agent_tools import WebAgent
+from web_tools import make_web_tools, init_session, close_session
+from config import settings
+import prompts
 from qwen_agent.agents import Assistant
 
 # Конфиг работы LLM/VLM модели агента
@@ -51,7 +51,7 @@ def get_agents(show_browser: bool = False):
 
     return _agent_singleton, _web_agent_singleton
 
-def run_agent(query: str, messages: List = None):
+def run_agent(query: str, messages: List = None) -> Generator[str, None, None]:
     """
     Запуск агента с заданной историей сообщений и входным запросом.
     """
@@ -68,11 +68,25 @@ def run_agent(query: str, messages: List = None):
         ]}
     ]
 
-    # TODO подумать как возвращать ответ и размышления агента
-    response_plain_text = ''
-    for ret_messages in agent.run(messages):
-        response_plain_text = multimodal_typewriter_print(ret_messages, response_plain_text)
+    for ret_messages_list in agent.run(messages):
+        if ret_messages_list:
+            last_message = ret_messages_list[-1]
+            content = last_message.get('content', '') if isinstance(last_message, dict) else last_message.content
+
+            if isinstance(content, str):
+                chunk_data = {"type": "text", "content": content}
+                yield json5.dumps(chunk_data) + "\n"
+            elif isinstance(content, list):
+                for item in content:
+                    if 'text' in item and item['text']:
+                        chunk_data = {"type": "text", "content": item['text']}
+                        yield json5.dumps(chunk_data) + "\n"
+                    elif 'image' in item and item['image']:
+                        chunk_data = {"type": "image", "content": item['image']}
+                        yield json5.dumps(chunk_data) + "\n"
+                    elif 'image_url' in item and item['image_url'].get('url'):
+                        chunk_data = {"type": "image", "content": item['image_url']['url']}
+                        yield json5.dumps(chunk_data) + "\n"
 
     close_session()
-
-    return response_plain_text
+    yield json5.dumps({"type": "status", "content": "session_closed"}) + "\n"

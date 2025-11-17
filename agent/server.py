@@ -1,7 +1,7 @@
 from fastapi import FastAPI
 from starlette.responses import StreamingResponse
 
-from .agent import run_agent, init_agent
+from agent import run_agent, init_agent
 
 app = FastAPI()
 
@@ -14,8 +14,8 @@ def startup():
 def agent_query(payload: dict):
     query = payload.get("query")
     messages = payload.get("messages")
-    result = run_agent(query=query, messages=messages)
-    return StreamingResponse()
+    result_generator = run_agent(query=query, messages=messages)
+    return StreamingResponse(result_generator, media_type="application/x-jsonl")
 
 @app.get("/agent/health")
 def health():

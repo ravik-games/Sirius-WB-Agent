@@ -1,5 +1,8 @@
+starlette
 pydantic-settings
 fastapi
+uvicorn
 json5
+python-dateutil
 qwen-agent
 playwright~=1.56.0
