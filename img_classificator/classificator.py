@@ -2,6 +2,7 @@ import httpx
 import base64
 from pathlib import Path
 from typing import Union
+import json
 
 from config import settings
 
@@ -73,7 +74,20 @@ class LLMClassificator:
             response.raise_for_status()
             data = response.json()
 
-        return data["choices"][0]["message"]["content"].strip()
+            response_text = data["choices"][0]["message"]["content"].strip()
+
+                
+            try:
+                # Парсим JSON ответ от модели
+                result = json.loads(response_text)
+                return result  # Уже словарь {response: "...", comment: "..."}
+                
+            except json.JSONDecodeError:
+                # Если модель вернула не JSON, создаем структурированный ответ
+                return {
+                    "response": "ERROR",
+                    "comment": "Неверный формат ответа от модели"
+                }
 
 
     # async def analyze_image(self, image_path: Union[str, Path], user_query: str) -> str:
