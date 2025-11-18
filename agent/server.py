@@ -7,7 +7,7 @@ app = FastAPI()
 
 @app.post("/agent/startup")
 def startup():
-    init_agent()
+    init_agent(show_browser=True)
     return {"status": "ok"}
 
 @app.post("/agent/query")

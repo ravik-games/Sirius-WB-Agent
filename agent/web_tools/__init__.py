@@ -1,6 +1,8 @@
+import base64
 from pathlib import Path
 from typing import Optional, List
 import json5
+import requests
 from qwen_agent.llm.schema import ContentItem
 
 from .web_agent_tools import WebAgent, get_agent
@@ -229,6 +231,37 @@ class Zoom(BaseTool):
         )
         return [ContentItem(image=str(path))]
 
+@register_tool("validate_candidate_item")
+class ValidateCandidate(BaseTool):
+    description = "Sends candidate to validation server and adds it to the output if it valid. To use this tool, please, go to the item's page or zoom on it's image and then call it."
+    parameters = []
+
+    def call(self, params: str, **kwargs) -> List[ContentItem]:
+        agent = get_agent()
+        path = agent.screenshot()
+        encoded_image = ""
+        with open(path, "rb") as image_file:
+            encoded_image = base64.b64encode(image_file.read()).decode('utf-8')
+
+        messages = kwargs.get("messages", [])
+        query = None
+
+        # ищем системное сообщение USER_QUERY::
+        for m in messages:
+            if m["role"] == "system" and isinstance(m["content"], str):
+                if m["content"].startswith("USER_QUERY::"):
+                    query = m["content"].replace("USER_QUERY::", "")
+                    break
+
+        # Call validator
+        payload = {
+            "user_query": query,
+            "image_base64": encoded_image
+        }
+        response = requests.post("http://localhost:8100/classificator", json=payload)
+
+        return [ContentItem(text=response.text if response.status_code == 200 else "ERROR")]
+
 def make_web_tools(agent: WebAgent | None = None) -> list[BaseTool]:
     """Возвращает список зарегистрированных web-tools.
 
@@ -241,6 +274,6 @@ def make_web_tools(agent: WebAgent | None = None) -> list[BaseTool]:
         ScrollTool(),
         WaitTool(),
         GoBackTool(),
-        GetCurrentURL(),
         Zoom(),
+        ValidateCandidate()
     ]
