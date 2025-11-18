@@ -92,7 +92,7 @@ def _run_agent(user_id: str, query: str, messages: List) -> Generator[str, None,
     yield json5.dumps(chunk_data, quote_keys=True, ensure_ascii=False) + "\n"
 
     messages += [
-        {"role": "system", "content": f"USER_QUERY::{query}"},
+        {"role": "system", "content": [{"text": f"USER_QUERY::{query}"}]},
         {"role": "user", "content": [
             {"image": start_screen_base64},
             {"text": prompts.QUERY_PROMPT.format(query=query)}

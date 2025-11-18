@@ -244,23 +244,25 @@ class ValidateCandidate(BaseTool):
             encoded_image = base64.b64encode(image_file.read()).decode('utf-8')
 
         messages = kwargs.get("messages", [])
-        query = None
-
-        # ищем системное сообщение USER_QUERY::
-        for m in messages:
-            if m["role"] == "system" and isinstance(m["content"], str):
-                if m["content"].startswith("USER_QUERY::"):
-                    query = m["content"].replace("USER_QUERY::", "")
-                    break
+        query = self.extract_user_query(messages)
 
         # Call validator
         payload = {
             "user_query": query,
             "image_base64": encoded_image
         }
-        response = requests.post("http://localhost:8100/classificator", json=payload)
+        response = requests.post("http://classificator:8100/classificator", json=payload, )
 
         return [ContentItem(text=response.text if response.status_code == 200 else "ERROR")]
+
+    def extract_user_query(self, messages):
+        for msg in messages:
+            for item in msg.get('content', []):
+                text = item.get('text', '')
+                if 'USER_QUERY::' in text:
+                    # Разделяем по USER_QUERY:: и берём часть после него
+                    return text.split('USER_QUERY::', 1)[1]
+        return ""
 
 def make_web_tools(agent: WebAgent | None = None) -> list[BaseTool]:
     """Возвращает список зарегистрированных web-tools.
