@@ -73,7 +73,7 @@ async def health():
 #         if 'temp_file_path' in locals() and os.path.exists(temp_file_path):
 #             os.unlink(temp_file_path)
 
-@app.post("/analyze")
+@app.post("/classificator")
 async def analyze_image_base64(
     image_base64: str = Form(..., description="Изображение в формате base64"),
     user_query: str = Form(..., description="JSON-строка с запросом пользователя")
@@ -88,10 +88,7 @@ async def analyze_image_base64(
         
         result = await llm_client.analyze_image(image_base64, user_query)
         
-        return {
-            "result": result,
-            "status": "success"
-        }
+        return result
         
     except Exception as e:
         raise HTTPException(
