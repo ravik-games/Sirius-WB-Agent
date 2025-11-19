@@ -1,9 +1,11 @@
+import base64
 from pathlib import Path
 from typing import Optional, List
 import json5
+import requests
 from qwen_agent.llm.schema import ContentItem
 
-from .web_agent_tools import WebAgent, get_agent, close_agent
+from .web_agent_tools import WebAgent, get_agent
 from qwen_agent.tools.base import BaseTool, register_tool
 
 def init_session(
@@ -21,10 +23,6 @@ def init_session(
     )
 
     return agent
-
-def close_session() -> None:
-    close_agent()
-
 
 @register_tool("click")
 class ClickTool(BaseTool):
@@ -233,6 +231,41 @@ class Zoom(BaseTool):
         )
         return [ContentItem(image=str(path))]
 
+@register_tool("validate_candidate_item")
+class ValidateCandidate(BaseTool):
+    description = "Sends candidate to validation server and adds it to the output if it valid. To use this tool, please, go to the item's page or zoom on it's image and then call it."
+    parameters = []
+
+    def call(self, params: str, **kwargs) -> List[ContentItem]:
+        agent = get_agent()
+        path = agent.screenshot()
+        encoded_image = ""
+        with open(path, "rb") as image_file:
+            encoded_image = base64.b64encode(image_file.read()).decode('utf-8')
+
+        messages = kwargs.get("messages", [])
+        query = self.extract_user_query(messages)
+
+        # Call validator
+        payload = {
+            "user_query": query,
+            "image_base64": encoded_image
+        }
+        response = requests.post("http://classificator:8100/classificator", json=payload)
+        return [ContentItem(text=response.text if response.status_code == 200 else "ERROR")]
+        #response = "{'response': 'OK', 'comment': ''}"
+        #return [ContentItem(text=response)]
+
+
+    def extract_user_query(self, messages):
+        for msg in messages:
+            for item in msg.get('content', []):
+                text = item.get('text', '')
+                if 'USER_QUERY::' in text:
+                    # Разделяем по USER_QUERY:: и берём часть после него
+                    return text.split('USER_QUERY::', 1)[1]
+        return ""
+
 def make_web_tools(agent: WebAgent | None = None) -> list[BaseTool]:
     """Возвращает список зарегистрированных web-tools.
 
@@ -245,6 +278,6 @@ def make_web_tools(agent: WebAgent | None = None) -> list[BaseTool]:
         ScrollTool(),
         WaitTool(),
         GoBackTool(),
-        GetCurrentURL(),
         Zoom(),
+        ValidateCandidate()
     ]

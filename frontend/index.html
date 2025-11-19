@@ -1,0 +1,733 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8"/>
+    <title>TINA</title>
+    <style>
+        body { 
+            font-family: Arial; 
+            margin: 0;
+            background: #f9f9f9;
+            overflow: hidden;
+        }
+
+        .layout {
+            display: flex;
+            height: 100vh;
+        }
+
+        /* ===== ЛЕВАЯ ПАНЕЛЬ — ЧАТ ===== */
+        .chat-container {
+            width: 50%;
+            padding: 30px;
+            overflow-y: visible;
+            background: #f9f9f9;
+        }
+
+        #chat-box {
+            background: white;
+            padding: 20px;
+            border-radius: 10px;
+            height: calc(100vh - 300px);
+            overflow-y: auto;
+            box-shadow: 0 0 10px rgba(0,0,0,0.1);
+        }
+
+        .msg {
+            margin: 10px 0;
+            padding: 8px 12px;
+            border-radius: 6px;
+            max-width: 80%;
+            white-space: pre-wrap;
+        }
+
+        .user {
+            background: #dce9ff;
+            text-align: right;
+            margin-left: 20%;
+        }
+
+        .bot {
+            background: #e4ffe4;
+            text-align: left;
+        }
+
+        .status-box {
+            background: #fff3cd;
+            border-left: 4px solid #ffca2c;
+            padding: 10px;
+            margin-top: 10px;
+        }
+
+        /* ===== ПРАВАЯ ПАНЕЛЬ — СТРИМ ===== */
+        .stream-container {
+            width: 50%;
+            padding: 30px;
+            background: #ffffff;
+            border-left: 2px solid #ddd;
+
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+
+            overflow-y: auto;
+        }
+
+
+        /* ===== INPUT PANEL ===== */
+        .input-row {
+            position: fixed;
+            bottom: 20px;
+            left: 30px;
+            width: calc(50% - 60px);
+            display: flex;
+            gap: 10px;
+        }
+
+        .input-row input {
+            width: 80%;
+            padding: 8px;
+            font-size: 16px;
+        }
+        .input-row button {
+            padding: 8px 16px;
+            font-size: 16px;
+        }
+        .input-row button:disabled {
+            background: #aaa;
+            cursor: not-allowed;
+        }
+
+        /* Общий контейнер секций (текст/фото) */
+        .stream-section {
+            display: flex;
+            flex-direction: column;
+            flex: 1;
+
+            background: #f5f7fb;                 /* мягкий светлый фон */
+            border: 1px solid #e1e5ee;           /* тонкая рамка */
+            border-radius: 12px;
+            padding: 15px 18px;
+            margin-bottom: 200px;
+
+            box-shadow: 0 4px 10px rgba(0,0,0,0.05);   /* мягкая тень */
+        }
+
+        /* Заголовки потоков */
+        .stream-section h3 {
+            margin: 0 0 10px 0;
+            color: #333;
+            font-weight: 600;
+        }
+
+        /* Прокручиваемые зоны */
+        #stream-text.stream-box {
+            height: 25vh;           /* 💡 ЭТО ВКЛЮЧАЕТ СКРОЛЛ */
+            overflow-y: auto;
+            background: white;
+            border-radius: 10px;
+            padding: 10px;
+            border: 1px solid #ccc;
+        }
+
+        /* Элемент текста */
+        .stream-item {
+            background: #eef4ff;
+            padding: 12px;
+            border-radius: 8px;
+            margin-bottom: 10px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+        }
+
+        /* Фото */
+        .stream-image {
+            width: 100%;
+            max-width: 100%;
+            border-radius: 12px;
+            margin-bottom: 10px;
+
+            box-shadow: 0 3px 10px rgba(0,0,0,0.15);
+        }
+
+        button:disabled {
+            background: #ccc !important;
+            cursor: not-allowed !important;
+            opacity: 0.6;
+        }
+
+    </style>
+</head>
+
+<body>
+
+<div class="layout">
+
+    <!-- ---------------- ЛЕВАЯ ПАНЕЛЬ — ЧАТ ---------------- -->
+    <div class="chat-container">
+
+        <h2>🛍️ TINA - T-Intelligent assistant </h2>
+
+        <div id="chat-box" class="chat-scroll"></div>
+
+        <div class="status-box" id="status-box">
+            <b>Статус:</b>
+            <span id="status-text">ожидание...</span>
+        </div>
+
+    </div>
+
+    <!-- ---------------- ПРАВАЯ ПАНЕЛЬ — СТРИМ ---------------- -->
+    <div class="stream-container">
+        <h2>📡 Stream</h2>
+
+        <!-- Блок фотографий -->
+        <h3>Экран</h3>
+        <div id="stream-photo"></div>
+
+
+        <!-- Блок текста -->
+        <div class="stream-section">
+            <h3>Поток мыслей</h3>
+            <div id="stream-text" class="stream-box"></div>
+    </div>
+
+</div>
+
+
+</div>
+
+<!-- ===== ФИКСИРОВАННАЯ ПАНЕЛЬ ВВОДА ===== -->
+<div class="input-row">
+    <input id="input" placeholder="Введите сообщение..." />
+    <input id="image-upload" type="file" accept="image/*" />
+    <button id="send-btn" onclick="send()">Отправить</button>    
+</div>
+
+
+<script>
+let userId = "user_1";
+let currentThoughtDiv = null;
+let selectedCandidates = [];
+
+
+function addMessage(sender, text) {
+    const div = document.createElement("div");
+    div.className = "msg " + sender;
+    div.innerText = text;
+    document.getElementById("chat-box").appendChild(div);
+
+    // автоскролл вниз
+    const box = document.getElementById("chat-box");
+    box.scrollTop = box.scrollHeight;
+}
+
+
+function updateStatus(intentReply) {
+    const status = intentReply.type;
+    document.getElementById("status-text").innerText = status;
+
+    if (status === "final") {
+        document.getElementById("send-btn").disabled = true;
+        document.getElementById("input").disabled = true;
+        addMessage("bot", "🔍 Поиск кандидатов... Ожидайте.");
+        runStream();
+    }
+}
+
+
+async function send() {
+    const btn = document.getElementById("send-btn");
+    const input = document.getElementById("input");
+    const fileInput = document.getElementById("image-upload");
+
+    const text = input.value.trim();
+    const file = fileInput.files[0];
+
+    if (!text && !file) return;
+
+    let finalPayload = text;
+    let base64Image = null;
+
+    // =============================
+    // ДОБАВЛЯЕМ КАРТИНКУ ЕСЛИ ЕСТЬ
+    // =============================
+    if (file) {
+        base64Image = await fileToBase64(file);
+        finalPayload += "\n" + base64Image;
+    }
+
+    // ----------------------------
+    // ПОКАЗЫВАЕМ СООБЩЕНИЕ В ЧАТЕ
+    // ----------------------------
+    addUserMessage(text, base64Image);
+
+    input.value = "";
+    fileInput.value = "";
+    btn.disabled = true;
+
+    // =============================
+    // РЕЖИМ УТОЧНЕНИЯ
+    // =============================
+    if (window.awaitingClarification === true) {
+
+        addMessage("bot", "🔍 Уточняю запрос...");
+
+        const resp = await fetch("http://localhost:8000/agent/clarify", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+                user_id: userId,
+                query: finalPayload
+            })
+        });
+
+        runClarifyStream(resp);
+        return;
+    }
+
+    // =============================
+    // ОСНОВНОЙ ЗАПРОС
+    // =============================
+    const res = await fetch("http://localhost:8000/chat", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+            user_id: userId,
+            text: finalPayload
+        })
+    });
+
+    const data = await res.json();
+
+    updateStatus(data.reply);
+
+    let replyText = "";
+
+    if (data.reply.type === "clarification") {
+        replyText = "🤖 Уточнение: " + data.reply.question;
+    }
+    else if (data.reply.type === "not_relevant") {
+        replyText = "⚠️ Нерелевантно: " + data.reply.message;
+    }
+    else if (data.reply.type === "final") {
+        const products = data.reply.products || [];
+
+        let output = "🎯 Финальный результат:\n\n";
+
+        products.forEach((product, index) => {
+            output += `Товар ${index + 1}: ${product.name}\n`;
+
+            const attrsObj = product.attributes || {};
+            const filled = Object.entries(attrsObj)
+                .filter(([_, val]) => val && String(val).trim() !== "");
+
+            if (filled.length > 0) {
+                output += "Атрибуты:\n";
+                filled.forEach(([k, v]) => {
+                    output += `• ${k}: ${v}\n`;
+                });
+            }
+
+            output += "\n";
+        });
+
+        replyText = output;
+    }
+    else {
+        replyText = JSON.stringify(data.reply, null, 2);
+    }
+
+    addMessage("bot", replyText);
+
+    if (data.reply.type !== "final") {
+        btn.disabled = false;
+    }
+}
+
+
+// ========== ПОКАЗ КАРТИНКИ В ЧАТЕ =============
+
+function addUserMessage(text, base64Image) {
+    const box = document.getElementById("chat-box");
+
+    const div = document.createElement("div");
+    div.className = "msg user";
+
+    // Формируем HTML содержимое
+    let html = "";
+    if (text) html += text + "<br>";
+
+    if (base64Image) {
+        html += `<img src="${base64Image}" 
+                      style="max-width:150px;
+                             margin-top:8px;
+                             border-radius:8px;
+                             display:block;">`;
+    }
+
+    div.innerHTML = html;
+
+    box.appendChild(div);
+    box.scrollTop = box.scrollHeight;
+}
+
+
+// === УТИЛИТА: file -> base64 ===
+function fileToBase64(file) {
+    return new Promise(resolve => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(reader.result);
+        reader.readAsDataURL(file);
+    });
+}
+
+
+function addStreamText(chunk) {
+    const box = document.getElementById("stream-text");
+    const text = chunk ?? "";
+
+    if (text.trim() === "") {
+        currentThoughtDiv = null;
+        return;
+    }
+
+    if (!currentThoughtDiv) {
+        currentThoughtDiv = document.createElement("div");
+        currentThoughtDiv.className = "stream-item";
+        box.appendChild(currentThoughtDiv);
+    }
+
+    currentThoughtDiv.innerText = text;
+
+    box.scrollTop = box.scrollHeight;
+}
+
+
+function addStreamPhoto(url) {
+    const box = document.getElementById("stream-photo");
+
+    box.innerHTML = "";
+
+    const img = document.createElement("img");
+    img.className = "stream-image";
+    img.src = url;
+
+    box.appendChild(img);
+}
+
+
+async function runStream() {
+
+    addStreamText("⏳ Стрим запущен. Ждём агента...");
+
+    const resp = await fetch("http://localhost:8000/agent/run", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ user_id: userId })
+    });
+
+    const reader = resp.body.getReader();
+    const decoder = new TextDecoder();
+
+    let buffer = "";
+
+    while (true) {
+
+        const { value, done } = await reader.read();
+
+        if (done) {
+            addStreamText("⏹ Стрим завершён от сервера.");
+            break;
+        }
+
+        buffer += decoder.decode(value, { stream: true });
+
+        let lines = buffer.split("\n");
+        buffer = lines.pop();
+
+        for (let line of lines) {
+
+            if (!line.trim()) continue;
+
+            let event;
+            try {
+                event = JSON.parse(line);
+            } catch (err) {
+                addStreamText("⚠ Плохой JSON: " + line);
+                continue;
+            }
+
+            if (event.type === "text") {
+                addStreamText(event.content);
+            }
+
+            else if (event.type === "image") {
+                addStreamPhoto(event.content);
+
+            }
+
+            else if (event.type === "products") {
+                console.log("📦 RAW PRODUCTS:", event.items);
+
+                addMessage("bot", "📦 Кандидаты получены!");
+
+                const urls = event.items;
+
+                const items = urls.map((url, idx) => ({
+                    id: idx + 1,
+                    url: url
+                }));
+
+                showCandidatesFromAgent(items);
+            }
+
+        }
+    }
+}
+
+
+function disableCandidateButtons() {
+    const buttons = document.querySelectorAll(".candidate-btn");
+    buttons.forEach(btn => {
+        btn.disabled = true;
+        btn.style.pointerEvents = "none";  // на всякий случай
+    });
+}
+
+
+async function selectCandidate(id) {
+    disableCandidateButtons();
+
+    // Найти товар по его id (последние показанные кандидаты)
+    const lastShown = window.lastCandidates || [];
+    const selected = lastShown.find(c => c.id === id);
+
+    if (selected) {
+        selectedCandidates.push(selected);
+        console.log("🧺 Добавлено в корзину:", selectedCandidates);
+    }
+
+    addMessage("user", `Выбираю товар #${id}`);
+
+    const resp = await fetch("http://localhost:8000/agent/next", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ user_id: userId })
+    });
+
+    // КАНДИДАТЫ ЗАКОНЧИЛИСЬ
+    if (!resp.ok) {
+        addMessage("bot", "❌ Товары закончились");
+
+        showCart();      // <==== выводим корзину
+
+        selectedCandidates = [];  // можно очистить корзину
+        return;
+    }
+
+    // очищаем поток
+    document.getElementById("stream-text").innerHTML = "";
+    document.getElementById("stream-photo").innerHTML = "";
+    currentThoughtDiv = null;
+
+    runNextStream(resp);
+}
+
+
+function showCart() {
+    const box = document.getElementById("chat-box");
+
+    const div = document.createElement("div");
+    div.className = "msg bot";
+    div.style.background = "#e4ffe4";
+    div.style.padding = "15px";
+    div.style.borderRadius = "8px";
+    div.style.marginTop = "15px";
+
+    if (selectedCandidates.length === 0) {
+        div.innerHTML = "<b>🧺 Корзина пуста</b>";
+        box.appendChild(div);
+        return;
+    }
+
+    let html = "<b>🧺 Ваша корзина:</b><br><br>";
+
+    selectedCandidates.forEach((item, index) => {
+        html += `
+            <b>${index + 1}. Товар</b><br>
+            🔗 <a href="${item.url}" target="_blank">${item.url}</a><br><br>
+        `;
+    });
+
+    div.innerHTML = html;
+    box.appendChild(div);
+
+    box.scrollTop = box.scrollHeight;
+}
+
+
+function rejectAll() {
+    disableCandidateButtons();
+
+    addMessage("user", "Мне ничего не подошло.");
+    addMessage("bot", "📝 Хорошо. Уточните, что вы хотите изменить.");
+
+    document.getElementById("input").disabled = false;
+    document.getElementById("send-btn").disabled = false;
+    document.getElementById("input").focus();
+
+    window.awaitingClarification = true;
+}
+
+function showCandidatesFromAgent(items) {
+    window.lastCandidates = items;
+
+    items.forEach((item, index) => {
+        const id = index + 1;
+
+        const div = document.createElement("div");
+        div.className = "msg bot";
+        div.style.background = "#eef7ff";
+        div.style.padding = "12px";
+        div.style.borderRadius = "8px";
+        div.style.margin = "10px 0";
+
+        div.innerHTML = `
+            <b>Товар #${id}</b><br>
+            🔗 <a href="${item.url}" target="_blank">${item.url}</a><br><br>
+
+            <button class="candidate-btn"
+                    onclick="selectCandidate(${id})"
+                    style="padding:8px 12px;border-radius:6px;cursor:pointer;">
+                Выбрать товар #${id}
+            </button>
+        `;
+
+        document.getElementById("chat-box").appendChild(div);
+    });
+
+    // Кнопка "ничего не подошло"
+    const rejectDiv = document.createElement("div");
+    rejectDiv.className = "msg bot";
+    rejectDiv.style.background = "#ffecec";
+    rejectDiv.style.padding = "12px";
+    rejectDiv.style.borderRadius = "8px";
+
+    rejectDiv.innerHTML = `
+        <button id="reject-btn"
+            class="candidate-btn"
+            style="background:#ff4d4d;color:white;padding:8px 14px;border:none;
+                   border-radius:6px;cursor:pointer;">
+            ❌ Ничего не подошло
+        </button>
+    `;
+
+    // обработчик
+    rejectDiv.querySelector("#reject-btn").onclick = rejectAll;
+
+    document.getElementById("chat-box").appendChild(rejectDiv);
+}
+
+
+async function runClarifyStream(resp) {
+
+    const reader = resp.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = "";
+
+    while (true) {
+        const { value, done } = await reader.read();
+        if (done) break;
+
+        buffer += decoder.decode(value, { stream: true });
+
+        let lines = buffer.split("\n");
+        buffer = lines.pop();
+
+        for (let line of lines) {
+            if (!line.trim()) continue;
+
+            let event;
+            try { event = JSON.parse(line); }
+            catch { continue; }
+
+            if (event.type === "text") {
+                addMessage("bot", event.content);
+            }
+
+            if (event.type === "candidates") {
+                showCandidates(event.items); // <-- показать новые кандидаты
+                window.awaitingClarification = false;
+            }
+        }
+    }
+
+    document.getElementById("send-btn").disabled = false;
+}
+
+
+async function runNextStream(resp) {
+
+    const reader = resp.body.getReader();
+    const decoder = new TextDecoder();
+
+    let buffer = "";
+
+    while (true) {
+
+        const { value, done } = await reader.read();
+
+        if (done) {
+            addStreamText("⏹ Стрим завершён от сервера.");
+            break;
+        }
+
+        buffer += decoder.decode(value, { stream: true });
+
+        let lines = buffer.split("\n");
+        buffer = lines.pop();
+
+
+        for (let line of lines) {
+            if (!line.trim()) continue;
+
+            let event;
+            try {
+                event = JSON.parse(line);
+            } catch (err) {
+                addStreamText("⚠ Плохой JSON: " + line);
+                continue;
+            }
+            console.log("NEXT EVENT:", event);
+
+            if (event.type === "text") {
+                addStreamText(event.content);
+            }
+
+            else if (event.type === "image") {
+                addStreamPhoto(event.content);
+
+            }
+
+            else if (event.type === "products") {
+                console.log("📦 RAW PRODUCTS:", event.items);
+
+                addMessage("bot", "📦 Кандидаты получены!");
+
+                const urls = event.items;
+
+                const items = urls.map((url, idx) => ({
+                    id: idx + 1,
+                    url: url
+                }));
+
+                showCandidatesFromAgent(items);
+            }
+        }
+    }
+}
+
+
+</script>
+</body>
+</html>
