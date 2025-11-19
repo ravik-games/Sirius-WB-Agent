@@ -3,9 +3,18 @@ from model_client import LLMClient
 from classifier import IntentClassifier, DialogueState
 
 from schemas import IntentRequest, IntentResponse
+from fastapi.middleware.cors import CORSMiddleware
 
 
 app = FastAPI(title="Intent filter service")
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],  # или конкретные домены
+    allow_credentials=True,
+    allow_methods=["*"],  # важно!
+    allow_headers=["*"],
+)
 
 state = DialogueState()
 llm_client = LLMClient()

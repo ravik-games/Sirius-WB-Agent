@@ -1,9 +1,18 @@
 from fastapi import FastAPI
 from starlette.responses import StreamingResponse
+from fastapi.middleware.cors import CORSMiddleware
 
 from main_agent import run_new_search, clarify_search, reset_agent
 
 app = FastAPI()
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],  # или конкретные домены
+    allow_credentials=True,
+    allow_methods=["*"],  # важно!
+    allow_headers=["*"],
+)
 
 @app.post("/agent/startup")
 def startup(payload: dict):

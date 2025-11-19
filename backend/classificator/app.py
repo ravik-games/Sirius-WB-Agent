@@ -4,8 +4,18 @@ from typing import Dict, Any
 import base64
 
 from classificator import LLMClassificator
+from fastapi.middleware.cors import CORSMiddleware
+
 
 app = FastAPI(title="Image Analysis Service")
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],  # или конкретные домены
+    allow_credentials=True,
+    allow_methods=["*"],  # важно!
+    allow_headers=["*"],
+)
 
 llm_client = LLMClassificator()
 
