@@ -176,7 +176,7 @@ async def agent_next(req: RunAgentRequest):
             async with client.stream(
                 "POST",
                 f"{AGENT_URL}/agent/query",
-                json={"query": product, "user_id": user_id},
+                json={"query": product, "user_id": user_id, "debug_print": True},
             ) as resp:
                 
                 async for chunk in resp.aiter_lines():     
