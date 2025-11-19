@@ -1,10 +1,13 @@
 import base64
 import os
+import time
 from collections import defaultdict, deque
+from copy import copy
 from pathlib import Path
-from typing import Optional, List, Generator
+from typing import Optional, List, Generator, Tuple
 import json5
 from qwen_agent.agents import Assistant
+from qwen_agent.llm import ModelServiceError
 from qwen_agent.utils.output_beautify import multimodal_typewriter_print
 
 from web_tools.web_agent_tools import WebAgent
@@ -28,6 +31,8 @@ llm_cfg = {
 
 # Кандидаты для вывода
 MAX_CANDIDATES = 3
+MAX_RETRIES = 3
+RETRY_DELAY = 3
 
 # ЗДЕСЬ НАДО СДЕЛАТЬ БД, ЭТО ТОЛЬКО ДЛЯ MVP
 _user_history = defaultdict(list)
@@ -36,23 +41,28 @@ _user_candidates = defaultdict(lambda: deque(maxlen=MAX_CANDIDATES))
 _agent_singleton: Optional[Assistant] = None
 _web_agent_singleton: Optional[WebAgent] = None
 
-def init_agent(show_browser: bool = False):
+def init_agent(show_browser: bool = False, only_qwen: bool = False) -> Tuple[Assistant, WebAgent]:
     """
     Инициализация агентов.
     """
-    web_agent = init_session(screenshot_path=Path("../screenshots"), headless=not show_browser)
+    if not only_qwen:
+        web_agent = init_session(screenshot_path=Path("../screenshots"), headless=not show_browser)
     web_tools = make_web_tools()
 
     agent = Assistant(
         llm=llm_cfg,
         function_list=web_tools,
-        system_message=prompts.SYSTEM_PROMPT,
+        system_message=prompts.SYSTEM_PROMPT
     )
-    return agent, web_agent
+    if only_qwen:
+        global _web_agent_singleton
+        return agent, _web_agent_singleton
+    else:
+        return agent, web_agent
 
-def reset_agent(show_browser: bool = False):
+def reset_agent(show_browser: bool = False, only_qwen = False):
     global _agent_singleton, _web_agent_singleton
-    _agent_singleton, _web_agent_singleton = init_agent(show_browser=show_browser)
+    _agent_singleton, _web_agent_singleton = init_agent(show_browser=show_browser, only_qwen=only_qwen)
 
 def get_agents(show_browser: bool = False):
     """
@@ -87,21 +97,38 @@ def _file_to_base64(file_path: str) -> str | None:
         print(f"Ошибка при чтении файла {file_path}: {e}")
         return None
 
+def run_agent_with_retry(user_id: str, query: str, messages: List, debug_print: bool = False):
+    retries = 0
+    while retries < MAX_RETRIES:
+        try:
+            # запускаем агент
+            yield from _run_agent(user_id, query, messages, debug_print, reset=True, new_session=False)
+        except ModelServiceError as e:
+            retries += 1
+            print(f"ModelServiceError: {e}, retry {retries}/{MAX_RETRIES}")
+            time.sleep(RETRY_DELAY)
+    else:
+        # если исчерпали все ретраи
+        yield json5.dumps({"type": "error", "content": "Модель недоступна, попробуйте позже."}, quote_keys=True, ensure_ascii=False) + "\n"
 
-def _run_agent(user_id: str, query: str, messages: List, debug_print: bool = False) -> Generator[str, None, None]:
+def _run_agent(user_id: str, query: str, messages: List, debug_print: bool = False, new_session: bool = True, reset: bool = False) -> Generator[str, None, None]:
     """
     Запуск агента с заданной историей сообщений и входным запросом.
     """
+    if new_session:
+        _new_session()
+    if reset:
+        reset_agent(only_qwen=True)
     global _user_candidates, _user_history
     agent, web_agent = get_agents(show_browser=False)
-    _new_session()
 
     start_screen_path = web_agent.screenshot()
     start_screen_base64 = _file_to_base64(str(start_screen_path))
     chunk_data = {"type": "image", "content": start_screen_base64}
     yield json5.dumps(chunk_data, quote_keys=True, ensure_ascii=False) + "\n"
 
-    messages += [
+    _messages = copy(messages)
+    _messages += [
         {"role": "system", "content": [{"text": f"USER_QUERY::{query}"}]},
         {"role": "user", "content": [
             {"image": start_screen_base64},
@@ -110,7 +137,7 @@ def _run_agent(user_id: str, query: str, messages: List, debug_print: bool = Fal
     ]
 
     ans = ''
-    for ret_messages_list in agent.run(messages):
+    for ret_messages_list in agent.run(_messages):
         if not ret_messages_list:
             continue
 
@@ -142,7 +169,8 @@ def _run_agent(user_id: str, query: str, messages: List, debug_print: bool = Fal
                     yield json5.dumps(chunk_data, quote_keys=True, ensure_ascii=False) + "\n"
 
     _user_history[user_id] = messages
-    _clear_session()
+    if len(_user_candidates[user_id]) == MAX_CANDIDATES:
+        _clear_session()
     print('Запрос завершен')
     yield json5.dumps({"type": "products", "items": list(_user_candidates[user_id])}, quote_keys=True, ensure_ascii=False) + "\n"
 
@@ -150,10 +178,10 @@ def run_new_search(user_id: str, query: str, debug_print: bool = False) -> Gener
     global _user_history, _user_candidates
     _user_history[user_id] = []
     _user_candidates[user_id] = deque(maxlen=MAX_CANDIDATES)
-    yield from _run_agent(user_id, query, [], debug_print=debug_print)
+    yield from run_agent_with_retry(user_id, query, [], debug_print=debug_print)
 
 def clarify_search(user_id: str, query: str) -> Generator[str, None, None]:
     global _user_history, _user_candidates
     messages = _user_history.get(user_id, [])
     _user_candidates[user_id] = deque(maxlen=MAX_CANDIDATES)
-    yield from _run_agent(user_id, query, messages)
+    yield from run_agent_with_retry(user_id, query, messages)
