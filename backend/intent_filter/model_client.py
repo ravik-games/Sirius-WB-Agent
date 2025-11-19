@@ -1,7 +1,5 @@
 import httpx
-from config import Settings
-
-settings = Settings()
+from config import settings
 
 class LLMClient:
 

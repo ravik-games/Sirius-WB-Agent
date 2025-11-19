@@ -1,5 +1,0 @@
-MODEL_TYPE=qwenvl_oai
-MODEL_URL=http://195.209.210.28:8000/v1
-MODEL_NAME=QuantTrio/Qwen3-VL-32B-Instruct-AWQ
-API_KEY=sk-no-key-required
-

@@ -1,4 +1,4 @@
-from pydantic_settings import BaseSettings
+from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
@@ -12,8 +12,10 @@ class Settings(BaseSettings):
     REPETITION_PENALTY: float = 1.0
     PRESENCE_PENALTY: float = 1.5
 
-    class Config:
-        env_file = ".env"
-        env_encoding = "utf-8"
+    model_config = SettingsConfigDict(
+        env_file=".env",        
+        env_file_encoding="utf-8",
+        extra='ignore'
+    )
 
-
+settings = Settings()

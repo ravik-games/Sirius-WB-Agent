@@ -116,7 +116,7 @@ class WebAgent:
         p = self.page
         out_path = self._ensure_path(screenshot_path)
         self.wait_until_stable()
-        p.screenshot(path=str(out_path), full_page=full_page, type="jpeg", quality=95)
+        p.screenshot(path=str(out_path), full_page=full_page, type="png")
         return out_path
 
     def click_and_screenshot(
