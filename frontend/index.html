@@ -11,13 +11,12 @@
             overflow: hidden;
         }
 
-        /* Лейаут 2 панели */
         .layout {
             display: flex;
             height: 100vh;
         }
 
-        /* ===== ЛЕВАЯ ПАНЕЛЬ — ЧАТ (твой исходный стиль) ===== */
+        /* ===== ЛЕВАЯ ПАНЕЛЬ — ЧАТ ===== */
         .chat-container {
             width: 50%;
             padding: 30px;
@@ -70,21 +69,10 @@
             display: flex;
             flex-direction: column;
             gap: 20px;
+
+            overflow-y: auto;
         }
 
-
-        .stream-item {
-            background: #f7f7f7;
-            padding: 12px;
-            margin-bottom: 12px;
-            border-radius: 8px;
-            box-shadow: 0 0 5px rgba(0,0,0,0.1);
-        }
-
-        .stream-image {
-            max-width: 100%;
-            border-radius: 10px;
-        }
 
         /* ===== INPUT PANEL ===== */
         .input-row {
@@ -120,7 +108,7 @@
             border: 1px solid #e1e5ee;           /* тонкая рамка */
             border-radius: 12px;
             padding: 15px 18px;
-            margin-bottom: 20px;
+            margin-bottom: 200px;
 
             box-shadow: 0 4px 10px rgba(0,0,0,0.05);   /* мягкая тень */
         }
@@ -133,8 +121,8 @@
         }
 
         /* Прокручиваемые зоны */
-        .stream-box {
-            height: 40vh;           /* 💡 ЭТО ВКЛЮЧАЕТ СКРОЛЛ */
+        #stream-text.stream-box {
+            height: 25vh;           /* 💡 ЭТО ВКЛЮЧАЕТ СКРОЛЛ */
             overflow-y: auto;
             background: white;
             border-radius: 10px;
@@ -159,6 +147,12 @@
             margin-bottom: 10px;
 
             box-shadow: 0 3px 10px rgba(0,0,0,0.15);
+        }
+
+        button:disabled {
+            background: #ccc !important;
+            cursor: not-allowed !important;
+            opacity: 0.6;
         }
 
     </style>
@@ -187,10 +181,9 @@
         <h2>📡 Stream</h2>
 
         <!-- Блок фотографий -->
-        <div class="stream-section">
-            <h3>Экран</h3>
-            <div id="stream-photo" class="stream-box"></div>
-        </div>  <!-- ← ЭТОТ ЗАКРЫВАЮЩИЙ DIV У ТЕБЯ ОТСУТСТВОВАЛ -->
+        <h3>Экран</h3>
+        <div id="stream-photo"></div>
+
 
         <!-- Блок текста -->
         <div class="stream-section">
@@ -206,12 +199,16 @@
 <!-- ===== ФИКСИРОВАННАЯ ПАНЕЛЬ ВВОДА ===== -->
 <div class="input-row">
     <input id="input" placeholder="Введите сообщение..." />
-    <button id="send-btn" onclick="send()">Отправить</button>
+    <input id="image-upload" type="file" accept="image/*" />
+    <button id="send-btn" onclick="send()">Отправить</button>    
 </div>
 
 
 <script>
 let userId = "user_1";
+let currentThoughtDiv = null;
+let selectedCandidates = [];
+
 
 function addMessage(sender, text) {
     const div = document.createElement("div");
@@ -223,6 +220,7 @@ function addMessage(sender, text) {
     const box = document.getElementById("chat-box");
     box.scrollTop = box.scrollHeight;
 }
+
 
 function updateStatus(intentReply) {
     const status = intentReply.type;
@@ -236,21 +234,67 @@ function updateStatus(intentReply) {
     }
 }
 
+
 async function send() {
     const btn = document.getElementById("send-btn");
     const input = document.getElementById("input");
-    const text = input.value;
+    const fileInput = document.getElementById("image-upload");
 
-    if (!text) return;
+    const text = input.value.trim();
+    const file = fileInput.files[0];
 
-    addMessage("user", text);
+    if (!text && !file) return;
+
+    let finalPayload = text;
+    let base64Image = null;
+
+    // =============================
+    // ДОБАВЛЯЕМ КАРТИНКУ ЕСЛИ ЕСТЬ
+    // =============================
+    if (file) {
+        base64Image = await fileToBase64(file);
+        finalPayload += "\n" + base64Image;
+    }
+
+    // ----------------------------
+    // ПОКАЗЫВАЕМ СООБЩЕНИЕ В ЧАТЕ
+    // ----------------------------
+    addUserMessage(text, base64Image);
+
     input.value = "";
+    fileInput.value = "";
     btn.disabled = true;
 
+    // =============================
+    // РЕЖИМ УТОЧНЕНИЯ
+    // =============================
+    if (window.awaitingClarification === true) {
+
+        addMessage("bot", "🔍 Уточняю запрос...");
+
+        const resp = await fetch("http://localhost:8000/agent/clarify", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+                user_id: userId,
+                query: finalPayload
+            })
+        });
+
+        runClarifyStream(resp);
+        return;
+    }
+
+    // =============================
+    // ОСНОВНОЙ ЗАПРОС
+    // =============================
     const res = await fetch("http://localhost:8000/chat", {
         method: "POST",
-        headers: {"Content-Type": "application/json"},
-        body: JSON.stringify({ user_id: userId, text })
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+            user_id: userId,
+            text: finalPayload
+        })
     });
 
     const data = await res.json();
@@ -261,14 +305,34 @@ async function send() {
 
     if (data.reply.type === "clarification") {
         replyText = "🤖 Уточнение: " + data.reply.question;
-    } 
+    }
     else if (data.reply.type === "not_relevant") {
         replyText = "⚠️ Нерелевантно: " + data.reply.message;
     }
     else if (data.reply.type === "final") {
-        replyText = "🎯 Финальный результат:\n" +
-                    JSON.stringify(data.reply.products, null, 2);
-    } 
+        const products = data.reply.products || [];
+
+        let output = "🎯 Финальный результат:\n\n";
+
+        products.forEach((product, index) => {
+            output += `Товар ${index + 1}: ${product.name}\n`;
+
+            const attrsObj = product.attributes || {};
+            const filled = Object.entries(attrsObj)
+                .filter(([_, val]) => val && String(val).trim() !== "");
+
+            if (filled.length > 0) {
+                output += "Атрибуты:\n";
+                filled.forEach(([k, v]) => {
+                    output += `• ${k}: ${v}\n`;
+                });
+            }
+
+            output += "\n";
+        });
+
+        replyText = output;
+    }
     else {
         replyText = JSON.stringify(data.reply, null, 2);
     }
@@ -281,27 +345,75 @@ async function send() {
 }
 
 
+// ========== ПОКАЗ КАРТИНКИ В ЧАТЕ =============
 
-function addStreamText(text) {
-    const box = document.getElementById("stream-text");
+function addUserMessage(text, base64Image) {
+    const box = document.getElementById("chat-box");
+
     const div = document.createElement("div");
-    div.className = "stream-item";
-    div.innerText = text;
-    box.appendChild(div);
+    div.className = "msg user";
 
-    // автоскролл
+    // Формируем HTML содержимое
+    let html = "";
+    if (text) html += text + "<br>";
+
+    if (base64Image) {
+        html += `<img src="${base64Image}" 
+                      style="max-width:150px;
+                             margin-top:8px;
+                             border-radius:8px;
+                             display:block;">`;
+    }
+
+    div.innerHTML = html;
+
+    box.appendChild(div);
     box.scrollTop = box.scrollHeight;
 }
+
+
+// === УТИЛИТА: file -> base64 ===
+function fileToBase64(file) {
+    return new Promise(resolve => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(reader.result);
+        reader.readAsDataURL(file);
+    });
+}
+
+
+function addStreamText(chunk) {
+    const box = document.getElementById("stream-text");
+    const text = chunk ?? "";
+
+    if (text.trim() === "") {
+        currentThoughtDiv = null;
+        return;
+    }
+
+    if (!currentThoughtDiv) {
+        currentThoughtDiv = document.createElement("div");
+        currentThoughtDiv.className = "stream-item";
+        box.appendChild(currentThoughtDiv);
+    }
+
+    currentThoughtDiv.innerText = text;
+
+    box.scrollTop = box.scrollHeight;
+}
+
 
 function addStreamPhoto(url) {
     const box = document.getElementById("stream-photo");
+
+    box.innerHTML = "";
+
     const img = document.createElement("img");
     img.className = "stream-image";
     img.src = url;
-    box.appendChild(img);
-    box.scrollTop = box.scrollHeight;
-}
 
+    box.appendChild(img);
+}
 
 
 async function runStream() {
@@ -354,9 +466,262 @@ async function runStream() {
 
             }
 
-            else if (event.type === "status" && event.content === "end") {
-                addStreamText("✔ Кандидат полностью сформирован.");
-                return;
+            else if (event.type === "products") {
+                console.log("📦 RAW PRODUCTS:", event.items);
+
+                addMessage("bot", "📦 Кандидаты получены!");
+
+                const urls = event.items;
+
+                const items = urls.map((url, idx) => ({
+                    id: idx + 1,
+                    url: url
+                }));
+
+                showCandidatesFromAgent(items);
+            }
+
+        }
+    }
+}
+
+
+function disableCandidateButtons() {
+    const buttons = document.querySelectorAll(".candidate-btn");
+    buttons.forEach(btn => {
+        btn.disabled = true;
+        btn.style.pointerEvents = "none";  // на всякий случай
+    });
+}
+
+
+async function selectCandidate(id) {
+    disableCandidateButtons();
+
+    // Найти товар по его id (последние показанные кандидаты)
+    const lastShown = window.lastCandidates || [];
+    const selected = lastShown.find(c => c.id === id);
+
+    if (selected) {
+        selectedCandidates.push(selected);
+        console.log("🧺 Добавлено в корзину:", selectedCandidates);
+    }
+
+    addMessage("user", `Выбираю товар #${id}`);
+
+    const resp = await fetch("http://localhost:8000/agent/next", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ user_id: userId })
+    });
+
+    // КАНДИДАТЫ ЗАКОНЧИЛИСЬ
+    if (!resp.ok) {
+        addMessage("bot", "❌ Товары закончились");
+
+        showCart();      // <==== выводим корзину
+
+        selectedCandidates = [];  // можно очистить корзину
+        return;
+    }
+
+    // очищаем поток
+    document.getElementById("stream-text").innerHTML = "";
+    document.getElementById("stream-photo").innerHTML = "";
+    currentThoughtDiv = null;
+
+    runNextStream(resp);
+}
+
+
+function showCart() {
+    const box = document.getElementById("chat-box");
+
+    const div = document.createElement("div");
+    div.className = "msg bot";
+    div.style.background = "#e4ffe4";
+    div.style.padding = "15px";
+    div.style.borderRadius = "8px";
+    div.style.marginTop = "15px";
+
+    if (selectedCandidates.length === 0) {
+        div.innerHTML = "<b>🧺 Корзина пуста</b>";
+        box.appendChild(div);
+        return;
+    }
+
+    let html = "<b>🧺 Ваша корзина:</b><br><br>";
+
+    selectedCandidates.forEach((item, index) => {
+        html += `
+            <b>${index + 1}. Товар</b><br>
+            🔗 <a href="${item.url}" target="_blank">${item.url}</a><br><br>
+        `;
+    });
+
+    div.innerHTML = html;
+    box.appendChild(div);
+
+    box.scrollTop = box.scrollHeight;
+}
+
+
+function rejectAll() {
+    disableCandidateButtons();
+
+    addMessage("user", "Мне ничего не подошло.");
+    addMessage("bot", "📝 Хорошо. Уточните, что вы хотите изменить.");
+
+    document.getElementById("input").disabled = false;
+    document.getElementById("send-btn").disabled = false;
+    document.getElementById("input").focus();
+
+    window.awaitingClarification = true;
+}
+
+function showCandidatesFromAgent(items) {
+    window.lastCandidates = items;
+
+    items.forEach((item, index) => {
+        const id = index + 1;
+
+        const div = document.createElement("div");
+        div.className = "msg bot";
+        div.style.background = "#eef7ff";
+        div.style.padding = "12px";
+        div.style.borderRadius = "8px";
+        div.style.margin = "10px 0";
+
+        div.innerHTML = `
+            <b>Товар #${id}</b><br>
+            🔗 <a href="${item.url}" target="_blank">${item.url}</a><br><br>
+
+            <button class="candidate-btn"
+                    onclick="selectCandidate(${id})"
+                    style="padding:8px 12px;border-radius:6px;cursor:pointer;">
+                Выбрать товар #${id}
+            </button>
+        `;
+
+        document.getElementById("chat-box").appendChild(div);
+    });
+
+    // Кнопка "ничего не подошло"
+    const rejectDiv = document.createElement("div");
+    rejectDiv.className = "msg bot";
+    rejectDiv.style.background = "#ffecec";
+    rejectDiv.style.padding = "12px";
+    rejectDiv.style.borderRadius = "8px";
+
+    rejectDiv.innerHTML = `
+        <button id="reject-btn"
+            class="candidate-btn"
+            style="background:#ff4d4d;color:white;padding:8px 14px;border:none;
+                   border-radius:6px;cursor:pointer;">
+            ❌ Ничего не подошло
+        </button>
+    `;
+
+    // обработчик
+    rejectDiv.querySelector("#reject-btn").onclick = rejectAll;
+
+    document.getElementById("chat-box").appendChild(rejectDiv);
+}
+
+
+async function runClarifyStream(resp) {
+
+    const reader = resp.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = "";
+
+    while (true) {
+        const { value, done } = await reader.read();
+        if (done) break;
+
+        buffer += decoder.decode(value, { stream: true });
+
+        let lines = buffer.split("\n");
+        buffer = lines.pop();
+
+        for (let line of lines) {
+            if (!line.trim()) continue;
+
+            let event;
+            try { event = JSON.parse(line); }
+            catch { continue; }
+
+            if (event.type === "text") {
+                addMessage("bot", event.content);
+            }
+
+            if (event.type === "candidates") {
+                showCandidates(event.items); // <-- показать новые кандидаты
+                window.awaitingClarification = false;
+            }
+        }
+    }
+
+    document.getElementById("send-btn").disabled = false;
+}
+
+
+async function runNextStream(resp) {
+
+    const reader = resp.body.getReader();
+    const decoder = new TextDecoder();
+
+    let buffer = "";
+
+    while (true) {
+
+        const { value, done } = await reader.read();
+
+        if (done) {
+            addStreamText("⏹ Стрим завершён от сервера.");
+            break;
+        }
+
+        buffer += decoder.decode(value, { stream: true });
+
+        let lines = buffer.split("\n");
+        buffer = lines.pop();
+
+
+        for (let line of lines) {
+            if (!line.trim()) continue;
+
+            let event;
+            try {
+                event = JSON.parse(line);
+            } catch (err) {
+                addStreamText("⚠ Плохой JSON: " + line);
+                continue;
+            }
+            console.log("NEXT EVENT:", event);
+
+            if (event.type === "text") {
+                addStreamText(event.content);
+            }
+
+            else if (event.type === "image") {
+                addStreamPhoto(event.content);
+
+            }
+
+            else if (event.type === "products") {
+                console.log("📦 RAW PRODUCTS:", event.items);
+
+                addMessage("bot", "📦 Кандидаты получены!");
+
+                const urls = event.items;
+
+                const items = urls.map((url, idx) => ({
+                    id: idx + 1,
+                    url: url
+                }));
+
+                showCandidatesFromAgent(items);
             }
         }
     }
