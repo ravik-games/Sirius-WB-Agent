@@ -4,7 +4,7 @@ services:
     build: ./backend/api_gateway
     container_name: api-gateway
     ports:
-      - "9213:8000"
+      - "9213:9213"
     depends_on:
       - intent-filter
       - agent
@@ -14,7 +14,7 @@ services:
     build: ./backend/intent_filter
     container_name: intent-filter
     ports:
-      - "9532:8001"
+      - "9532:9532"
     env_file:
       - ./backend/intent_filter/.env
 
@@ -22,7 +22,7 @@ services:
     build: ./backend/agent
     container_name: agent
     ports:
-      - "9432:8037"
+      - "9432:9432"
     env_file:
       - ./backend/agent/.env
 
@@ -30,7 +30,7 @@ services:
     build: ./backend/classificator
     container_name: classificator
     ports:
-      - "4234:8100"
+      - "4234:4234"
     depends_on:
       - agent
 

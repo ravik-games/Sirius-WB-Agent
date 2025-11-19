@@ -5,7 +5,7 @@ import base64
 async def test_analyze():
     async with httpx.AsyncClient() as client:
         # Тест здоровья
-        response = await client.get("http://localhost:8100/health")
+        response = await client.get("http://localhost:4234/health")
         print("Health check:", response.json())
         
         # Тест анализа через путь
@@ -15,7 +15,7 @@ async def test_analyze():
         }
         
         response = await client.post(
-            "http://localhost:8100/analyze",
+            "http://localhost:4234/analyze",
             data=form_data
         )
         print("Analysis result:", response.json())

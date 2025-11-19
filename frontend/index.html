@@ -277,7 +277,7 @@ async function send() {
 
         addMessage("bot", "🔍 Уточняю запрос...");
 
-        const resp = await fetch("http://localhost:8000/agent/clarify", {
+        const resp = await fetch("http://localhost:9213/agent/clarify", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
@@ -293,7 +293,7 @@ async function send() {
     // =============================
     // ОСНОВНОЙ ЗАПРОС
     // =============================
-    const res = await fetch("http://localhost:8000/chat", {
+    const res = await fetch("http://localhost:9213/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -425,7 +425,7 @@ async function runStream() {
 
     addStreamText("⏳ Стрим запущен. Ждём агента...");
 
-    const resp = await fetch("http://localhost:8000/agent/run", {
+    const resp = await fetch("http://localhost:9213/agent/run", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ user_id: userId })
@@ -514,7 +514,7 @@ async function selectCandidate(id) {
 
     addMessage("user", `Выбираю товар #${id}`);
 
-    const resp = await fetch("http://localhost:8000/agent/next", {
+    const resp = await fetch("http://localhost:9213/agent/next", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ user_id: userId })
