@@ -1,0 +1,368 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8"/>
+    <title>TINA</title>
+    <style>
+        body { 
+            font-family: Arial; 
+            margin: 0;
+            background: #f9f9f9;
+            overflow: hidden;
+        }
+
+        /* Лейаут 2 панели */
+        .layout {
+            display: flex;
+            height: 100vh;
+        }
+
+        /* ===== ЛЕВАЯ ПАНЕЛЬ — ЧАТ (твой исходный стиль) ===== */
+        .chat-container {
+            width: 50%;
+            padding: 30px;
+            overflow-y: visible;
+            background: #f9f9f9;
+        }
+
+        #chat-box {
+            background: white;
+            padding: 20px;
+            border-radius: 10px;
+            height: calc(100vh - 300px);
+            overflow-y: auto;
+            box-shadow: 0 0 10px rgba(0,0,0,0.1);
+        }
+
+        .msg {
+            margin: 10px 0;
+            padding: 8px 12px;
+            border-radius: 6px;
+            max-width: 80%;
+            white-space: pre-wrap;
+        }
+
+        .user {
+            background: #dce9ff;
+            text-align: right;
+            margin-left: 20%;
+        }
+
+        .bot {
+            background: #e4ffe4;
+            text-align: left;
+        }
+
+        .status-box {
+            background: #fff3cd;
+            border-left: 4px solid #ffca2c;
+            padding: 10px;
+            margin-top: 10px;
+        }
+
+        /* ===== ПРАВАЯ ПАНЕЛЬ — СТРИМ ===== */
+        .stream-container {
+            width: 50%;
+            padding: 30px;
+            background: #ffffff;
+            border-left: 2px solid #ddd;
+
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+        }
+
+
+        .stream-item {
+            background: #f7f7f7;
+            padding: 12px;
+            margin-bottom: 12px;
+            border-radius: 8px;
+            box-shadow: 0 0 5px rgba(0,0,0,0.1);
+        }
+
+        .stream-image {
+            max-width: 100%;
+            border-radius: 10px;
+        }
+
+        /* ===== INPUT PANEL ===== */
+        .input-row {
+            position: fixed;
+            bottom: 20px;
+            left: 30px;
+            width: calc(50% - 60px);
+            display: flex;
+            gap: 10px;
+        }
+
+        .input-row input {
+            width: 80%;
+            padding: 8px;
+            font-size: 16px;
+        }
+        .input-row button {
+            padding: 8px 16px;
+            font-size: 16px;
+        }
+        .input-row button:disabled {
+            background: #aaa;
+            cursor: not-allowed;
+        }
+
+        /* Общий контейнер секций (текст/фото) */
+        .stream-section {
+            display: flex;
+            flex-direction: column;
+            flex: 1;
+
+            background: #f5f7fb;                 /* мягкий светлый фон */
+            border: 1px solid #e1e5ee;           /* тонкая рамка */
+            border-radius: 12px;
+            padding: 15px 18px;
+            margin-bottom: 20px;
+
+            box-shadow: 0 4px 10px rgba(0,0,0,0.05);   /* мягкая тень */
+        }
+
+        /* Заголовки потоков */
+        .stream-section h3 {
+            margin: 0 0 10px 0;
+            color: #333;
+            font-weight: 600;
+        }
+
+        /* Прокручиваемые зоны */
+        .stream-box {
+            height: 40vh;           /* 💡 ЭТО ВКЛЮЧАЕТ СКРОЛЛ */
+            overflow-y: auto;
+            background: white;
+            border-radius: 10px;
+            padding: 10px;
+            border: 1px solid #ccc;
+        }
+
+        /* Элемент текста */
+        .stream-item {
+            background: #eef4ff;
+            padding: 12px;
+            border-radius: 8px;
+            margin-bottom: 10px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+        }
+
+        /* Фото */
+        .stream-image {
+            width: 100%;
+            max-width: 100%;
+            border-radius: 12px;
+            margin-bottom: 10px;
+
+            box-shadow: 0 3px 10px rgba(0,0,0,0.15);
+        }
+
+    </style>
+</head>
+
+<body>
+
+<div class="layout">
+
+    <!-- ---------------- ЛЕВАЯ ПАНЕЛЬ — ЧАТ ---------------- -->
+    <div class="chat-container">
+
+        <h2>🛍️ TINA - T-Intelligent assistant </h2>
+
+        <div id="chat-box" class="chat-scroll"></div>
+
+        <div class="status-box" id="status-box">
+            <b>Статус:</b>
+            <span id="status-text">ожидание...</span>
+        </div>
+
+    </div>
+
+    <!-- ---------------- ПРАВАЯ ПАНЕЛЬ — СТРИМ ---------------- -->
+    <div class="stream-container">
+        <h2>📡 Stream</h2>
+
+        <!-- Блок фотографий -->
+        <div class="stream-section">
+            <h3>Экран</h3>
+            <div id="stream-photo" class="stream-box"></div>
+        </div>  <!-- ← ЭТОТ ЗАКРЫВАЮЩИЙ DIV У ТЕБЯ ОТСУТСТВОВАЛ -->
+
+        <!-- Блок текста -->
+        <div class="stream-section">
+            <h3>Поток мыслей</h3>
+            <div id="stream-text" class="stream-box"></div>
+    </div>
+
+</div>
+
+
+</div>
+
+<!-- ===== ФИКСИРОВАННАЯ ПАНЕЛЬ ВВОДА ===== -->
+<div class="input-row">
+    <input id="input" placeholder="Введите сообщение..." />
+    <button id="send-btn" onclick="send()">Отправить</button>
+</div>
+
+
+<script>
+let userId = "user_1";
+
+function addMessage(sender, text) {
+    const div = document.createElement("div");
+    div.className = "msg " + sender;
+    div.innerText = text;
+    document.getElementById("chat-box").appendChild(div);
+
+    // автоскролл вниз
+    const box = document.getElementById("chat-box");
+    box.scrollTop = box.scrollHeight;
+}
+
+function updateStatus(intentReply) {
+    const status = intentReply.type;
+    document.getElementById("status-text").innerText = status;
+
+    if (status === "final") {
+        document.getElementById("send-btn").disabled = true;
+        document.getElementById("input").disabled = true;
+        addMessage("bot", "🔍 Поиск кандидатов... Ожидайте.");
+        runStream();
+    }
+}
+
+async function send() {
+    const btn = document.getElementById("send-btn");
+    const input = document.getElementById("input");
+    const text = input.value;
+
+    if (!text) return;
+
+    addMessage("user", text);
+    input.value = "";
+    btn.disabled = true;
+
+    const res = await fetch("http://localhost:8000/chat", {
+        method: "POST",
+        headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({ user_id: userId, text })
+    });
+
+    const data = await res.json();
+
+    updateStatus(data.reply);
+
+    let replyText = "";
+
+    if (data.reply.type === "clarification") {
+        replyText = "🤖 Уточнение: " + data.reply.question;
+    } 
+    else if (data.reply.type === "not_relevant") {
+        replyText = "⚠️ Нерелевантно: " + data.reply.message;
+    }
+    else if (data.reply.type === "final") {
+        replyText = "🎯 Финальный результат:\n" +
+                    JSON.stringify(data.reply.products, null, 2);
+    } 
+    else {
+        replyText = JSON.stringify(data.reply, null, 2);
+    }
+
+    addMessage("bot", replyText);
+
+    if (data.reply.type !== "final") {
+        btn.disabled = false;
+    }
+}
+
+
+
+function addStreamText(text) {
+    const box = document.getElementById("stream-text");
+    const div = document.createElement("div");
+    div.className = "stream-item";
+    div.innerText = text;
+    box.appendChild(div);
+
+    // автоскролл
+    box.scrollTop = box.scrollHeight;
+}
+
+function addStreamPhoto(url) {
+    const box = document.getElementById("stream-photo");
+    const img = document.createElement("img");
+    img.className = "stream-image";
+    img.src = url;
+    box.appendChild(img);
+    box.scrollTop = box.scrollHeight;
+}
+
+
+
+async function runStream() {
+
+    addStreamText("⏳ Стрим запущен. Ждём агента...");
+
+    const resp = await fetch("http://localhost:8000/agent/run", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ user_id: userId })
+    });
+
+    const reader = resp.body.getReader();
+    const decoder = new TextDecoder();
+
+    let buffer = "";
+
+    while (true) {
+
+        const { value, done } = await reader.read();
+
+        if (done) {
+            addStreamText("⏹ Стрим завершён от сервера.");
+            break;
+        }
+
+        buffer += decoder.decode(value, { stream: true });
+
+        let lines = buffer.split("\n");
+        buffer = lines.pop();
+
+        for (let line of lines) {
+
+            if (!line.trim()) continue;
+
+            let event;
+            try {
+                event = JSON.parse(line);
+            } catch (err) {
+                addStreamText("⚠ Плохой JSON: " + line);
+                continue;
+            }
+
+            if (event.type === "text") {
+                addStreamText(event.content);
+            }
+
+            else if (event.type === "image") {
+                addStreamPhoto(event.content);
+
+            }
+
+            else if (event.type === "status" && event.content === "end") {
+                addStreamText("✔ Кандидат полностью сформирован.");
+                return;
+            }
+        }
+    }
+}
+
+
+</script>
+</body>
+</html>
