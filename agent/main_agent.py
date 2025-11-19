@@ -5,6 +5,7 @@ from pathlib import Path
 from typing import Optional, List, Generator
 import json5
 from qwen_agent.agents import Assistant
+from qwen_agent.utils.output_beautify import multimodal_typewriter_print
 
 from web_tools.web_agent_tools import WebAgent
 from web_tools import make_web_tools, init_session
@@ -19,7 +20,7 @@ llm_cfg = {
     'api_key': settings.api_key,
 
     'generate_cfg': {
-        "temperature": 0.05,
+        "temperature": 0.2,
         "top_p": 0.9,
         "repetition_penalty": 1.1
     }
@@ -49,6 +50,10 @@ def init_agent(show_browser: bool = False):
     )
     return agent, web_agent
 
+def reset_agent(show_browser: bool = False):
+    global _agent_singleton, _web_agent_singleton
+    _agent_singleton, _web_agent_singleton = init_agent(show_browser=show_browser)
+
 def get_agents(show_browser: bool = False):
     """
     Возвращает созданный или существующий экземпляр Assistant и WebAgent.
@@ -63,6 +68,10 @@ def get_agents(show_browser: bool = False):
 def _clear_session():
     global _web_agent_singleton
     _web_agent_singleton.close()
+
+def _new_session():
+    global _web_agent_singleton, _agent_singleton
+    _web_agent_singleton.new_session()
 
 def _file_to_base64(file_path: str) -> str | None:
     """
@@ -79,12 +88,13 @@ def _file_to_base64(file_path: str) -> str | None:
         return None
 
 
-def _run_agent(user_id: str, query: str, messages: List) -> Generator[str, None, None]:
+def _run_agent(user_id: str, query: str, messages: List, debug_print: bool = False) -> Generator[str, None, None]:
     """
     Запуск агента с заданной историей сообщений и входным запросом.
     """
     global _user_candidates, _user_history
     agent, web_agent = get_agents(show_browser=False)
+    _new_session()
 
     start_screen_path = web_agent.screenshot()
     start_screen_base64 = _file_to_base64(str(start_screen_path))
@@ -99,9 +109,13 @@ def _run_agent(user_id: str, query: str, messages: List) -> Generator[str, None,
         ]}
     ]
 
+    ans = ''
     for ret_messages_list in agent.run(messages):
         if not ret_messages_list:
             continue
+
+        if debug_print:
+            ans = multimodal_typewriter_print(ret_messages_list, ans)
 
         last_message = ret_messages_list[-1]
         content = last_message.get('content', '') if isinstance(last_message, dict) else last_message.content
@@ -129,14 +143,17 @@ def _run_agent(user_id: str, query: str, messages: List) -> Generator[str, None,
 
     _user_history[user_id] = messages
     _clear_session()
+    print('Запрос завершен')
     yield json5.dumps({"type": "products", "items": list(_user_candidates[user_id])}, quote_keys=True, ensure_ascii=False) + "\n"
 
-def run_new_search(user_id: str, query: str) -> Generator[str, None, None]:
-    global _user_history
+def run_new_search(user_id: str, query: str, debug_print: bool = False) -> Generator[str, None, None]:
+    global _user_history, _user_candidates
     _user_history[user_id] = []
-    yield from _run_agent(user_id, query, [])
+    _user_candidates[user_id] = deque(maxlen=MAX_CANDIDATES)
+    yield from _run_agent(user_id, query, [], debug_print=debug_print)
 
 def clarify_search(user_id: str, query: str) -> Generator[str, None, None]:
-    global _user_history
+    global _user_history, _user_candidates
     messages = _user_history.get(user_id, [])
+    _user_candidates[user_id] = deque(maxlen=MAX_CANDIDATES)
     yield from _run_agent(user_id, query, messages)
